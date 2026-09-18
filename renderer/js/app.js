@@ -525,11 +525,14 @@
   let updDismissed = '';
   let updTimer = 0;
 
-  const mb = (b) => b ? ` · ${Math.round(b / 1048576)} MB` : '';
+  const mb = (b) => b ? ` · ${Math.round(b / 1048576)} MB` : ''; // que el número no quede solo en un renglón
+  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 
   function updView(s) {
     switch (s.phase) {
-      case 'available': return { ico: 'download', title: `${s.name} disponible`, sub: `Tenés la ${s.current}${mb(s.bytes)}`,
+      // El título del release es "Umbral X — qué trae": arriba la versión, abajo el qué
+      case 'available': return { ico: 'download', title: `Umbral ${s.version} disponible`,
+        sub: `${cap((s.name || '').split(/\s+[—-]\s+/).slice(1).join(' — ')) || `Tenés la ${s.current}`}${mb(s.bytes)}`,
         acts: [['open', 'Ver novedades', 'btn'], ['download', 'Descargar', 'btn btn-accent']] };
       case 'downloading': return { ico: 'download', title: `Descargando la ${s.version}`, sub: `${Math.round(s.pct * 100)}%`, bar: s.pct, sticky: true };
       case 'ready': return { ico: 'check', cls: 'ok', title: `La ${s.version} está lista`, sub: 'Si no reiniciás ahora, se instala cuando salgas de Umbral.',
