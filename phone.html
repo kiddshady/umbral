@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0a0f">
+<title>Umbral</title>
+<style>
+  /* Mismo ADN que la app: dark, SVG propios, todo transiciona. Sin frameworks. */
+  :root { --bg:#0b0a0f; --elev:#14121b; --elev2:#1c1926; --elev3:#262133;
+          --text:#e9e6f4; --text2:#a79fbf; --muted:#6a6382;
+          --accent:#9d7bff; --accent-soft:rgba(157,123,255,.16); --ok:#7ee2b8; --danger:#ff5c7a;
+          --ease:cubic-bezier(.22,1,.36,1); }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html,body { background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; min-height:100%; }
+  ::selection { background:rgba(157,123,255,.3); color:var(--text); }
+  button { font:inherit; color:inherit; background:none; border:none; cursor:pointer; }
+  [hidden] { display:none !important; }
+
+  .wrap { max-width:520px; margin:0 auto; min-height:100dvh;
+          padding:40px 18px calc(32px + env(safe-area-inset-bottom));
+          display:flex; flex-direction:column; align-items:center; gap:24px; }
+  .logo { display:flex; flex-direction:column; align-items:center; gap:12px;
+          opacity:0; transform:translateY(8px); animation:in .5s var(--ease) forwards; }
+  h1 { font-size:20px; font-weight:600; letter-spacing:.18em; text-transform:uppercase; }
+
+  /* ---- pestañas */
+  .tabs { position:relative; display:grid; grid-template-columns:1fr 1fr; width:100%;
+          padding:4px; border-radius:12px; background:var(--elev);
+          box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
+          opacity:0; transform:translateY(8px); animation:in .5s var(--ease) .05s forwards; }
+  .tab-ind { position:absolute; top:4px; bottom:4px; left:4px; width:calc(50% - 4px);
+             border-radius:9px; background:var(--elev3);
+             box-shadow:0 2px 10px rgba(0,0,0,.35);
+             transition:transform .28s var(--ease); }
+  .tabs[data-on="recv"] .tab-ind { transform:translateX(100%); }
+  .tab { position:relative; display:flex; align-items:center; justify-content:center; gap:8px;
+         padding:11px 0; border-radius:9px; font-size:14px; font-weight:600; color:var(--muted);
+         transition:color .2s var(--ease); }
+  .tab.on { color:var(--text); }
+  .badge { min-width:20px; height:20px; padding:0 6px; border-radius:10px;
+           display:grid; place-items:center; font-size:11.5px; font-weight:700;
+           background:var(--accent); color:#120e1c; font-variant-numeric:tabular-nums;
+           transform:scale(0); opacity:0;
+           transition:transform .25s var(--ease), opacity .25s var(--ease); }
+  .badge.show { transform:none; opacity:1; }
+
+  /* ---- paneles */
+  .panel { width:100%; display:flex; flex-direction:column; gap:14px;
+           transition:opacity .18s var(--ease), transform .18s var(--ease); }
+  .panel.out { opacity:0; transform:translateY(6px); }
+  .panel.enter { opacity:0; transform:translateY(6px); }
+
+  /* ---- enviar */
+  .drop { display:flex; flex-direction:column; align-items:center; gap:12px; width:100%;
+          padding:46px 20px; border-radius:16px; background:var(--elev);
+          box-shadow:0 8px 28px rgba(0,0,0,.45), inset 0 0 0 1px rgba(157,123,255,.16);
+          color:var(--accent); cursor:pointer;
+          transition:transform .18s var(--ease), box-shadow .18s var(--ease); }
+  .drop:active { transform:scale(.97); }
+  .drop span { font-size:16px; font-weight:600; color:var(--text); }
+  .drop small { color:var(--muted); font-size:12px; }
+  ul { list-style:none; width:100%; display:flex; flex-direction:column; gap:8px; }
+  li { display:flex; align-items:center; gap:10px; background:var(--elev); border-radius:10px;
+       padding:10px 14px; font-size:13px; color:var(--text2);
+       opacity:0; transform:translateY(6px);
+       transition:opacity .25s var(--ease), transform .25s var(--ease); }
+  li.show { opacity:1; transform:none; }
+  .name { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+          user-select:text; -webkit-user-select:text; }
+  li .st { display:flex; transition:color .2s var(--ease); }
+  li.ok .st { color:var(--ok); }
+  li.err .st { color:var(--danger); }
+
+  /* ---- recibir */
+  .recv-head { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:38px; }
+  .recv-count { font-size:13px; color:var(--text2); font-variant-numeric:tabular-nums; }
+  .btn { display:flex; align-items:center; gap:8px; padding:9px 14px; border-radius:9px;
+         font-size:13px; font-weight:600; background:var(--accent-soft); color:var(--accent);
+         transition:opacity .2s var(--ease), transform .15s var(--ease), background .2s var(--ease); }
+  .btn:active { transform:scale(.95); }
+  .btn:disabled { opacity:.35; pointer-events:none; }
+
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; }
+  .tile { position:relative; display:flex; flex-direction:column; text-align:left;
+          border-radius:12px; overflow:hidden; background:var(--elev);
+          box-shadow:0 4px 16px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.04);
+          transition:transform .18s var(--ease), opacity .25s var(--ease); }
+  .tile:active { transform:scale(.96); }
+  .tile.entering { opacity:0; transform:translateY(10px) scale(.96); }
+  .tile.leaving { opacity:0; transform:scale(.9); pointer-events:none; }
+  .thumb { position:relative; aspect-ratio:1; background:var(--elev2); display:grid; place-items:center; overflow:hidden; }
+  .thumb img { width:100%; height:100%; object-fit:cover; opacity:0; transition:opacity .3s var(--ease), filter .3s var(--ease); }
+  .thumb img.loaded { opacity:1; }
+  .file-ico { display:flex; flex-direction:column; align-items:center; gap:8px; color:var(--muted); }
+  .file-ico b { font-size:11px; letter-spacing:.12em; font-weight:700; color:var(--text2); }
+  .tile.done .thumb img { filter:saturate(.55) brightness(.7); }
+  .state { position:absolute; z-index:1; right:8px; bottom:8px; width:30px; height:30px; border-radius:50%;
+           display:grid; place-items:center; color:var(--text);
+           background:rgba(11,10,15,.72); backdrop-filter:blur(4px);
+           box-shadow:0 2px 10px rgba(0,0,0,.4);
+           transition:background .25s var(--ease), color .25s var(--ease); }
+  .tile.done .state { background:var(--ok); color:#0b1a14; }
+  .tile.err .state { background:var(--danger); color:#1d0a0f; }
+  .meta { padding:8px 10px 10px; display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .meta .name { font-size:12.5px; color:var(--text); }
+  .meta small { font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
+
+  .recv-empty { display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center;
+                padding:44px 20px; color:var(--muted); font-size:13px;
+                transition:opacity .3s var(--ease); }
+  .recv-empty svg { color:var(--elev3); margin-bottom:6px; }
+  .recv-empty strong { color:var(--text2); font-size:15px; font-weight:600; }
+
+  .spin { animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @keyframes in { to { opacity:1; transform:none; } }
+</style></head>
+<body><div class="wrap">
+  <div class="logo">
+    <svg width="52" height="52" viewBox="0 0 24 24" fill="none">
+      <path d="M5.5 20.5v-9a6.5 6.5 0 0 1 13 0v9" stroke="#9d7bff" stroke-width="2" stroke-linecap="round"/>
+      <rect x="11" y="10.4" width="2" height="10.1" rx="1" fill="#cbb8ff"/>
+    </svg>
+    <h1>Umbral</h1>
+  </div>
+
+  <div class="tabs" id="tabs" data-on="send">
+    <span class="tab-ind"></span>
+    <button class="tab on" data-tab="send">Enviar a la PC</button>
+    <button class="tab" data-tab="recv">Recibir <span class="badge" id="badge"></span></button>
+  </div>
+
+  <section class="panel" id="p-send">
+    <label class="drop">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 19V6"/><path d="m6 12 6-6 6 6"/>
+      </svg>
+      <span>Elegir capturas</span>
+      <small>se env&iacute;an solas al elegirlas</small>
+      <input id="f" type="file" accept="image/*" multiple hidden>
+    </label>
+    <ul id="sent"></ul>
+  </section>
+
+  <section class="panel" id="p-recv" hidden>
+    <div class="recv-head">
+      <span class="recv-count" id="recv-count"></span>
+      <button class="btn" id="dl-all" disabled></button>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="recv-empty" id="recv-empty" hidden>
+      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+        <path d="M5.5 20.5v-9a6.5 6.5 0 0 1 13 0v9"/><path d="M12 11v9.5"/>
+      </svg>
+      <strong>No hay nada esperando</strong>
+      <span>Arrastr&aacute; archivos a la pesta&ntilde;a &laquo;Para el celu&raquo; de Umbral en la PC.</span>
+    </div>
+  </section>
+</div>
+<script>
+  const $ = (s) => document.querySelector(s);
+  const SVG = {
+    check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg>',
+    x: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+    spin: '<svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"/></svg>',
+    down: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m6.5 10 5.5 5.5 5.5-5.5"/><path d="M5 20h14"/></svg>',
+    file: '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>',
+  };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const reveal = (el, cls) => { void el.offsetHeight; el.classList.add(cls); };
+
+  // ------------------------------------------------------------ pestañas
+
+  const tabs = $('#tabs');
+  const panels = { send: $('#p-send'), recv: $('#p-recv') };
+  let current = location.hash === '#recibir' ? 'recv' : 'send';
+  let switching = Promise.resolve();
+
+  function setTabUi(name) {
+    tabs.dataset.on = name;
+    for (const t of tabs.querySelectorAll('.tab')) t.classList.toggle('on', t.dataset.tab === name);
+    history.replaceState(null, '', name === 'recv' ? '#recibir' : location.pathname);
+  }
+
+  function showTab(name) {
+    if (name === current) return;
+    const from = panels[current], to = panels[name];
+    current = name;
+    setTabUi(name);
+    switching = switching.then(async () => {
+      from.classList.add('out');
+      await wait(180);
+      from.hidden = true;
+      from.classList.remove('out');
+      to.classList.add('enter');
+      to.hidden = false;
+      void to.offsetHeight;
+      to.classList.remove('enter');
+    });
+    if (name === 'recv') refresh();
+  }
+
+  tabs.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-tab]');
+    if (t) showTab(t.dataset.tab);
+  });
+
+  // estado inicial sin animación
+  setTabUi(current);
+  panels.send.hidden = current !== 'send';
+  panels.recv.hidden = current !== 'recv';
+
+  // ------------------------------------------------------------ enviar
+
+  const f = $('#f');
+  const sent = $('#sent');
+  f.addEventListener('change', async () => {
+    const files = [...f.files]; f.value = '';
+    for (const file of files) {
+      const li = document.createElement('li');
+      li.innerHTML = '<span class="st" style="color:var(--muted)">' + SVG.spin + '</span><span class="name"></span>';
+      li.querySelector('.name').textContent = file.name;
+      sent.prepend(li);
+      reveal(li, 'show');
+      let ok = false;
+      try {
+        const r = await fetch('/drop', {
+          method: 'POST',
+          headers: { 'content-type': file.type || 'application/octet-stream' },
+          body: file,
+        });
+        ok = r.ok && (await r.json()).ok;
+      } catch {}
+      li.classList.add(ok ? 'ok' : 'err');
+      const st = li.querySelector('.st');
+      st.style.color = '';
+      st.innerHTML = ok ? SVG.check : SVG.x;
+    }
+  });
+
+  // ------------------------------------------------------------ recibir
+
+  const grid = $('#grid');
+  const emptyEl = $('#recv-empty');
+  const badge = $('#badge');
+  const countEl = $('#recv-count');
+  const dlAll = $('#dl-all');
+  const tiles = new Map(); // name → { el, item }
+  const busy = new Set();  // nombres bajándose ahora
+  let loaded = false;
+
+  const fmtSize = (b) =>
+    b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(0) + ' KB' : (b / 1048576).toFixed(1).replace('.', ',') + ' MB';
+  const extOf = (n) => (n.includes('.') ? n.split('.').pop().slice(0, 5).toUpperCase() : 'ARCHIVO');
+  const enc = encodeURIComponent;
+
+  function makeTile(item) {
+    const el = document.createElement('button');
+    el.className = 'tile entering';
+    el.innerHTML = '<div class="thumb"><span class="state"></span></div>' +
+      '<div class="meta"><span class="name"></span><small></small></div>';
+    const thumb = el.querySelector('.thumb');
+    if (item.image) {
+      const img = new Image();
+      img.loading = 'lazy';
+      img.alt = '';
+      img.onload = () => img.classList.add('loaded');
+      img.src = '/out/thumb/' + enc(item.name) + '?v=' + item.mtime;
+      thumb.append(img);
+    } else {
+      thumb.insertAdjacentHTML('afterbegin', '<div class="file-ico">' + SVG.file + '<b></b></div>');
+      thumb.querySelector('b').textContent = extOf(item.name);
+    }
+    el.querySelector('.name').textContent = item.name;
+    el.querySelector('small').textContent = fmtSize(item.size);
+    el.addEventListener('click', () => download(item.name));
+    return el;
+  }
+
+  function paintTile(entry) {
+    const { el, item } = entry;
+    const isBusy = busy.has(item.name);
+    el.classList.toggle('done', !!item.delivered && !isBusy);
+    el.querySelector('.state').innerHTML = isBusy ? SVG.spin : item.delivered ? SVG.check : SVG.down;
+  }
+
+  function paintHead() {
+    const all = [...tiles.values()].map((t) => t.item);
+    const pending = all.filter((i) => !i.delivered).length;
+    badge.textContent = pending;
+    badge.classList.toggle('show', pending > 0);
+    countEl.textContent = !all.length ? '' :
+      pending ? `${pending} sin bajar de ${all.length}` : `${all.length} ${all.length === 1 ? 'archivo' : 'archivos'}, todo bajado`;
+    dlAll.innerHTML = SVG.down + '<span>Bajar ' + (pending > 1 ? 'los ' + pending : 'pendientes') + '</span>';
+    dlAll.disabled = pending === 0;
+    emptyEl.hidden = !loaded || all.length > 0;
+  }
+
+  async function refresh() {
+    let items;
+    try {
+      const r = await fetch('/out', { cache: 'no-store' });
+      items = (await r.json()).items;
+    } catch { return; } // PC apagada o fuera del WiFi: se reintenta en el próximo ciclo
+    loaded = true;
+    const seen = new Set(items.map((i) => i.name));
+
+    for (const [name, entry] of tiles) {
+      if (seen.has(name)) continue;
+      tiles.delete(name);
+      entry.el.classList.add('leaving');
+      setTimeout(() => entry.el.remove(), 250);
+    }
+    // la lista viene más nueva primero; los nuevos entran arriba
+    for (const item of [...items].reverse()) {
+      const entry = tiles.get(item.name);
+      if (entry) {
+        entry.item = item;
+        paintTile(entry);
+        continue;
+      }
+      const el = makeTile(item);
+      const fresh = { el, item };
+      tiles.set(item.name, fresh);
+      paintTile(fresh);
+      grid.prepend(el);
+      requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('entering')));
+    }
+    paintHead();
+  }
+
+  async function download(name) {
+    const entry = tiles.get(name);
+    if (!entry || busy.has(name)) return;
+    busy.add(name);
+    entry.el.classList.remove('err');
+    paintTile(entry);
+    try {
+      const r = await fetch('/out/file/' + enc(name) + '?dl=1', { cache: 'no-store' });
+      if (!r.ok) throw new Error(r.status);
+      const blob = await r.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      entry.item.delivered = Date.now();
+    } catch {
+      entry.el.classList.add('err');
+      entry.el.querySelector('.state').innerHTML = SVG.x;
+      busy.delete(name);
+      paintHead();
+      return;
+    }
+    busy.delete(name);
+    paintTile(entry);
+    paintHead();
+  }
+
+  dlAll.addEventListener('click', async () => {
+    const pending = [...tiles.values()].filter((t) => !t.item.delivered).map((t) => t.item.name);
+    for (const name of pending) await download(name);
+  });
+
+  // Consulta cada 3 s mientras la página está a la vista: lo que se suelta
+  // en la PC aparece solo, y la pestaña Enviar igual muestra el contador.
+  refresh();
+  setInterval(() => { if (!document.hidden) refresh(); }, 3000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+</script>
+</body></html>

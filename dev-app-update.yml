@@ -1,0 +1,4 @@
+provider: github
+owner: kiddshady
+repo: umbral
+updaterCacheDirName: umbral-updater

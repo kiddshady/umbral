@@ -1,0 +1,74 @@
+{
+  "name": "umbral",
+  "productName": "Umbral",
+  "version": "0.2.2",
+  "description": "La puerta entre el teléfono y la UCX — capturas del celu a la PC y archivos de la PC al celu, por LAN",
+  "main": "main.js",
+  "author": "Kidd Shady · Umbrovex Systems",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "icons": "node scripts/build-icons.mjs",
+    "dist": "electron-builder --win --publish never",
+    "dist:portable": "electron-builder --win portable --publish never",
+    "release": "electron-builder --win --publish always"
+  },
+  "devDependencies": {
+    "electron": "40.10.2",
+    "electron-builder": "^25.1.8",
+    "png-to-ico": "^3.0.2",
+    "sharp": "^0.35.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "qrcode": "^1.5.4"
+  },
+  "build": {
+    "appId": "com.umbra.umbral",
+    "productName": "Umbral",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "server.js",
+      "outbox.js",
+      "updater.js",
+      "phone.html",
+      "renderer/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Umbral",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
+    },
+    "copyright": "© 2026 Kidd Shady · Umbrovex Systems",
+    "publish": {
+      "provider": "github",
+      "owner": "kiddshady",
+      "repo": "umbral",
+      "releaseType": "release"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kiddshady/umbral.git"
+  }
+}

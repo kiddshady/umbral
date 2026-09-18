@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self'">
+  <title>Umbral</title>
+  <link rel="stylesheet" href="css/umbral.css">
+</head>
+<body>
+  <header id="titlebar">
+    <div class="tb-brand">
+      <span class="tb-logo" id="tb-logo"></span>
+      <span class="tb-name">Umbral</span>
+    </div>
+    <div class="tb-controls">
+      <button id="win-min" class="tb-btn" aria-label="Minimizar"></button>
+      <button id="win-max" class="tb-btn" aria-label="Maximizar"></button>
+      <button id="win-close" class="tb-btn tb-close" aria-label="Cerrar"></button>
+    </div>
+  </header>
+
+  <div id="toolbar">
+    <div class="tool-left">
+      <div class="seg" id="seg" data-on="in">
+        <span class="seg-ind"></span>
+        <button class="seg-btn on" data-view="in">Recibidas <span class="seg-n" id="n-in">0</span></button>
+        <button class="seg-btn" data-view="out">Para el celu <span class="seg-n" id="n-out">0</span></button>
+      </div>
+      <span class="tool-sep"></span>
+      <span class="status-dot" id="status-dot"></span>
+      <code id="addr" class="selectable">&mdash;</code>
+      <button id="btn-qr" class="icon-btn" data-tip="QR para el tel&eacute;fono"></button>
+    </div>
+    <div class="tool-right">
+      <div class="out-tools" id="out-tools">
+        <button id="btn-add" class="icon-btn" data-tip="Agregar archivos"></button>
+        <button id="btn-sweep" class="icon-btn" data-tip="Quitar las ya bajadas"></button>
+      </div>
+      <div class="size-ctl">
+        <span class="size-ico" id="size-sm"></span>
+        <input type="range" id="thumb-size" min="150" max="420" step="10" aria-label="Tama&ntilde;o de miniaturas">
+        <span class="size-ico" id="size-lg"></span>
+      </div>
+      <button id="btn-folder" class="icon-btn" data-tip="Abrir carpeta"></button>
+      <button id="btn-nuke" class="icon-btn danger" data-tip="Purgar todo"></button>
+    </div>
+  </div>
+
+  <div id="views">
+    <main id="gallery-wrap" class="view active">
+      <div id="gallery" class="grid"></div>
+      <div id="empty" class="empty">
+        <span class="empty-arch" id="empty-arch"></span>
+        <h2>El umbral est&aacute; despejado</h2>
+        <p>Compart&iacute; una captura desde el tel&eacute;fono y aparece ac&aacute;.</p>
+        <code id="empty-addr" class="selectable"></code>
+      </div>
+    </main>
+
+    <main id="outbox-wrap" class="view">
+      <div id="outbox" class="grid"></div>
+      <div id="out-empty" class="empty">
+        <span class="empty-arch" id="out-empty-ico"></span>
+        <h2>Nada esperando al celu</h2>
+        <p>Arrastr&aacute; archivos ac&aacute;, peg&aacute; una imagen con Ctrl+V<br>o us&aacute; <strong>Enviar a <span class="inline-ico" id="chev"></span> Umbral (al celu)</strong> en el Explorador.</p>
+        <p class="empty-hint">En el tel&eacute;fono aparecen en la pesta&ntilde;a <strong>Recibir</strong> de <code id="out-empty-addr" class="selectable"></code></p>
+      </div>
+    </main>
+
+    <div id="drop-veil" class="drop-veil">
+      <div class="drop-card">
+        <span id="drop-ico"></span>
+        <h2>Solt&aacute; para mandarlo al celu</h2>
+      </div>
+    </div>
+  </div>
+  <input id="file-pick" type="file" multiple hidden>
+
+  <div id="qr-pop" class="qr-pop" hidden>
+    <div class="qr-card"><img id="qr-img" alt="QR"></div>
+    <p>Escanealo con el tel&eacute;fono para abrir el uploader.</p>
+  </div>
+
+  <div id="ctx" class="ctx" hidden></div>
+  <div id="lightbox" class="lightbox" hidden></div>
+  <div id="modal-root"></div>
+  <div id="toasts"></div>
+  <div id="upd" class="upd" hidden></div>
+
+  <script src="js/icons.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="26" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="slit" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d3c4ff"/>
+      <stop offset="1" stop-color="#9d7bff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="#0b0a0f"/>
+  <!-- arco de la puerta -->
+  <path d="M300 788 V468 a212 212 0 0 1 424 0 V788"
+        fill="none" stroke="#9d7bff" stroke-width="54" stroke-linecap="round" filter="url(#glow)"/>
+  <!-- la rendija de luz -->
+  <rect x="483" y="430" width="58" height="358" rx="29" fill="url(#slit)" filter="url(#glow)"/>
+</svg>
