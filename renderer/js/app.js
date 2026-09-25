@@ -171,11 +171,15 @@
     // El mismo menú sirve para la miniatura y para la foto agrandada
     const menu = (x, y) => openCtx(x, y, [
       { act: 'copy', ico: 'copy', label: 'Copiar' },
+      { act: 'export', ico: 'export', label: 'Exportar' },
       { act: 'del', ico: 'trash', label: 'Eliminar', danger: true },
     ], async (act) => {
       if (act === 'copy') {
         const res = await window.umbral.copyImage(img.name);
         toast(res.ok ? 'Copiada al portapapeles' : 'No se pudo copiar', { ok: res.ok });
+      } else if (act === 'export') {
+        const res = await window.umbral.exportImage(img.name);
+        if (!res.canceled) toast(res.ok ? `Exportada: ${res.name}` : 'No se pudo exportar', { ok: res.ok });
       } else {
         closeLightbox();
         removeImage(img.name);
@@ -231,10 +235,20 @@
     fig.className = 'card out-card' + (item.image ? '' : ' file');
     fig.dataset.name = item.name;
     const menu = (x, y) => openCtx(x, y, [
+      ...(item.image ? [{ act: 'copy', ico: 'copy', label: 'Copiar' }] : []),
+      { act: 'export', ico: 'export', label: 'Exportar' },
       { act: 'rm', ico: 'remove', label: 'Quitar de la bandeja', danger: true },
-    ], () => {
-      closeLightbox();
-      removeOut(item.name);
+    ], async (act) => {
+      if (act === 'copy') {
+        const res = await window.umbral.outbox.copy(item.name);
+        toast(res.ok ? 'Copiada al portapapeles' : 'No se pudo copiar', { ok: res.ok });
+      } else if (act === 'export') {
+        const res = await window.umbral.outbox.export(item.name);
+        if (!res.canceled) toast(res.ok ? `${item.image ? 'Exportada' : 'Exportado'}: ${res.name}` : 'No se pudo exportar', { ok: res.ok });
+      } else {
+        closeLightbox();
+        removeOut(item.name);
+      }
     });
     if (item.image) {
       fig.innerHTML = `<img class="card-img" src="${item.url}" alt="" loading="lazy">`;

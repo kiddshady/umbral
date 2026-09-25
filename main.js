@@ -1,7 +1,7 @@
 // Umbral — main process
 // Ventana anti-flash (método off-screen validado) + servidor LAN + inbox de capturas.
 
-const { app, BrowserWindow, screen, ipcMain, Tray, Menu, shell, clipboard, nativeImage } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, Tray, Menu, shell, clipboard, nativeImage, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -281,14 +281,40 @@ function createTray() {
 
 const safeJoin = (name) => path.join(inboxDir, path.basename(name));
 
-ipcMain.handle('images:list', () => listImages());
-
-ipcMain.handle('images:copy', (_e, name) => {
-  const img = nativeImage.createFromPath(safeJoin(name));
+function copyImageFile(src) {
+  const img = nativeImage.createFromPath(src);
   if (img.isEmpty()) return { ok: false };
   clipboard.writeImage(img);
   return { ok: true };
-});
+}
+
+// Exportar = "Guardar como": una copia donde Fran elija. La carpeta se
+// recuerda mientras la app esté abierta, así exportar varias seguidas no
+// obliga a navegar cada vez.
+let lastExportDir = null;
+async function exportFile(src) {
+  const name = path.basename(src);
+  const ext = path.extname(name).slice(1);
+  const res = await dialog.showSaveDialog(mainWindow, {
+    title: 'Exportar',
+    defaultPath: path.join(lastExportDir || app.getPath('downloads'), name),
+    filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }, { name: 'Todos los archivos', extensions: ['*'] }] : [],
+  });
+  if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+  try {
+    await fsp.copyFile(src, res.filePath);
+  } catch {
+    return { ok: false };
+  }
+  lastExportDir = path.dirname(res.filePath);
+  return { ok: true, name: path.basename(res.filePath) };
+}
+
+ipcMain.handle('images:list', () => listImages());
+
+ipcMain.handle('images:copy', (_e, name) => copyImageFile(safeJoin(name)));
+
+ipcMain.handle('images:export', (_e, name) => exportFile(safeJoin(name)));
 
 ipcMain.handle('images:delete', async (_e, name) => {
   await fsp.rm(safeJoin(name), { force: true });
@@ -325,6 +351,10 @@ ipcMain.handle('outbox:list', async () => (await outbox.list()).map(outMeta));
 ipcMain.handle('outbox:addPaths', (_e, paths) => addToOutbox(argFiles(paths || []), { emit: false }));
 ipcMain.handle('outbox:remove', (_e, name) => outbox.remove(name));
 ipcMain.handle('outbox:clear', () => outbox.clear());
+
+ipcMain.handle('outbox:copy', (_e, name) => copyImageFile(outbox.full(name)));
+
+ipcMain.handle('outbox:export', (_e, name) => exportFile(outbox.full(name)));
 
 // Archivos copiados (Ctrl+C en el Explorador, o ShareX, que deja el archivo
 // y no la imagen). Electron no lee CF_HDROP: FileNameW es instantáneo pero

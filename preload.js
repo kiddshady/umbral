@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('umbral', {
   listImages: () => ipcRenderer.invoke('images:list'),
   copyImage: (name) => ipcRenderer.invoke('images:copy', name),
+  exportImage: (name) => ipcRenderer.invoke('images:export', name),
   deleteImage: (name) => ipcRenderer.invoke('images:delete', name),
   clearAll: () => ipcRenderer.invoke('images:clear'),
   serverInfo: () => ipcRenderer.invoke('server:info'),
@@ -18,6 +19,8 @@ contextBridge.exposeInMainWorld('umbral', {
     paste: () => ipcRenderer.invoke('outbox:paste'),
     remove: (name) => ipcRenderer.invoke('outbox:remove', name),
     clear: () => ipcRenderer.invoke('outbox:clear'),
+    copy: (name) => ipcRenderer.invoke('outbox:copy', name),
+    export: (name) => ipcRenderer.invoke('outbox:export', name),
     onAdded: (cb) => ipcRenderer.on('outbox:added', (_e, items, opts) => cb(items, opts)),
     onDelivered: (cb) => ipcRenderer.on('outbox:delivered', (_e, item) => cb(item)),
   },
