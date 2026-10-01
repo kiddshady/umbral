@@ -1,5 +1,5 @@
 // Umbral — pipeline de íconos (patrón Thunder)
-// design/*.svg (masters) → build/icon.ico + build/tray.ico + build/icon.png
+// design/*.svg (masters) → build/icon.ico + build/tray.ico + build/icon.png + assets/favicon.ico
 // Uso: npm run icons
 
 import sharp from 'sharp';
@@ -45,3 +45,11 @@ const png512 = await render('icon.svg', 512, 1024);
 await writeFile(build('icon.png'), png512);
 await writeFile(assets('icon.png'), png512);
 console.log('build+assets/icon.png  ← 512');
+
+// --- favicon.ico (ruta /favicon.ico del server) → assets/ ---
+// Toda de la variante simple: en una pestaña se ve a 16 px aunque la pantalla
+// pida 32 o 48 píxeles reales, y a ese tamaño el glow se vuelve mancha.
+const FAVICON = [48, 32, 24, 16];
+const favIco = await pngToIco(await Promise.all(FAVICON.map((s) => render('icon-small.svg', s, 1024))));
+await writeFile(assets('favicon.ico'), favIco);
+console.log('assets/favicon.ico  ←', FAVICON.join(', '));

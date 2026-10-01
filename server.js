@@ -7,6 +7,8 @@
 //   GET  /out/file/:name  → el archivo; con ?dl=1 lo marca como entregado
 // Otros
 //   GET  /                → página mobile (enviar / recibir)
+//   GET  /favicon.ico     → el ícono de la pestaña
+//   GET  /icon            → el ícono maestro (PNG 512)
 //   GET  /ping            → health-check
 
 const http = require('http');
@@ -122,6 +124,13 @@ function createUmbralServer({ inboxDir, basePort, onImage, outbox, thumb, onDeli
       }
       if (req.method === 'GET' && p === '/ping') {
         return json(res, 200, { ok: true, app: 'umbral' });
+      }
+      if (req.method === 'GET' && p === '/favicon.ico') {
+        // los navegadores lo buscan acá aunque la página no lo declare
+        const ico = await fsp.readFile(path.join(__dirname, 'assets', 'favicon.ico')).catch(() => null);
+        if (!ico) return json(res, 404, { ok: false, error: 'no-icon' });
+        res.writeHead(200, { 'content-type': 'image/x-icon', 'cache-control': 'max-age=86400' });
+        return res.end(ico);
       }
       if (req.method === 'GET' && p === '/icon') {
         // el ícono maestro, para bajarlo al teléfono (shortcut personalizado, etc.)
