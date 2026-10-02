@@ -9,13 +9,14 @@
 //   GET  /                → página mobile (enviar / recibir)
 //   GET  /favicon.ico     → el ícono de la pestaña
 //   GET  /icon            → el ícono maestro (PNG 512)
-//   GET  /ping            → health-check
+//   GET  /ping            → health-check; con el nombre del equipo, que la app del celu muestra
 
 const http = require('http');
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 
 const MAX_BYTES = 64 * 1024 * 1024; // 64 MB por request — de sobra para capturas
 
@@ -123,7 +124,7 @@ function createUmbralServer({ inboxDir, basePort, onImage, outbox, thumb, onDeli
         return res.end(page);
       }
       if (req.method === 'GET' && p === '/ping') {
-        return json(res, 200, { ok: true, app: 'umbral' });
+        return json(res, 200, { ok: true, app: 'umbral', name: os.hostname() });
       }
       if (req.method === 'GET' && p === '/favicon.ico') {
         // los navegadores lo buscan acá aunque la página no lo declare

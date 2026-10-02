@@ -4,6 +4,7 @@ La puerta entre el teléfono y la PC, por la red local: las capturas del celu ll
 
 - La PC escucha en el puerto `4747`. El celu sube con `POST /drop` (imagen cruda o multipart) y baja desde `/#recibir`.
 - Cerrar la ventana la esconde en el tray; el servidor sigue andando.
+- En Android también está [Umbral Mobile](../UmbralMobile): encuentra a la PC sola y aparece en el menú Compartir.
 - Se actualiza sola desde los releases de este repo (no la versión portable).
 
 ```bash
