@@ -1,5 +1,30 @@
-// Umbral — main process
-// Ventana anti-flash (método off-screen validado) + servidor LAN + inbox de capturas.
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UMBRAL — proceso principal
+   La puerta entre el teléfono y la UCX: servidor LAN, inbox de capturas,
+   bandeja para el celu, tray y auto-update. La ventana es la de Onyx.
+
+   ── La ventana sin un solo frame blanco ────────────────────────────────────
+   Hay dos destellos blancos distintos y se arreglan distinto:
+
+   A) Flash de contenido (FOUC). Antes de que el renderer pinte, Chromium
+      muestra el fondo por defecto de la ventana. Se mata con `show:false` +
+      `backgroundColor` oscuro + `paintWhenInitiallyHidden` + el splash inline
+      del index.html.
+
+   B) Flash del compositor (DWM). Cuando el HWND pasa de oculto a visible,
+      el compositor de Windows pinta su backdrop POR ENCIMA del swap chain de
+      Chromium. Ningún CSS lo alcanza. No se puede evitar: se puede PROVOCAR
+      donde nadie lo vea. Por eso la ventana nace en x:-20000, hace su primer
+      show() ahí, y recién 200 ms después se mueve a su lugar.
+
+   · -20000  → fuera de cualquier monitor, incluso en setups multi-pantalla.
+   · 200 ms  → lo que tarda DWM en asentar la superficie off-screen. Con 120
+               el flash vuelve de forma intermitente.
+   · Electron ≥ 40 → el frame fantasma de minimizar→restaurar se pinta con el
+               `backgroundColor` de la ventana. En la 33 y anteriores es blanco.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 const { app, BrowserWindow, screen, ipcMain, Tray, Menu, shell, clipboard, nativeImage, dialog } = require('electron');
 const path = require('path');
@@ -13,8 +38,23 @@ const { createUmbralServer } = require('./server');
 const { createOutbox } = require('./outbox');
 const updater = require('./updater');
 
-const BASE_PORT = 4747;
+/* Color base de arranque. Tiene que coincidir con --ox-bg de tokens.css (lo
+   sincroniza `node tools/retint.mjs` y lo vigila `npm test`). El renderer se
+   lo vuelve a mandar ya resuelto apenas carga (win:set-bg). */
+const BG = '#0b0a0f';
+
+const BASE_PORT = Number(process.env.UMBRAL_PORT) || 4747;
 const IMG_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+
+/* El humo (test/renderer.test.cjs) arranca este mismo archivo con una carpeta
+   temporal: la ventana se queda fuera de pantalla y no hay tray, ni acceso de
+   «Enviar a», ni búsqueda de actualizaciones. */
+const SMOKE = !!process.env.UMBRAL_SMOKE;
+
+const DEFAULT_W = 1240;
+const DEFAULT_H = 820;
+const MIN_W = 900;
+const MIN_H = 600;
 
 let mainWindow = null;
 let tray = null;
@@ -23,13 +63,18 @@ let serverInfo = { ip: null, port: null, url: null };
 
 // En desarrollo, userData propio: si no, comparte el lock de instancia única
 // con la Umbral instalada y el `npm start` se cierra solo apenas arranca.
-if (!app.isPackaged) app.setPath('userData', path.join(__dirname, '.devdata'));
+if (process.env.UMBRAL_DATA) app.setPath('userData', path.join(process.env.UMBRAL_DATA, 'userdata'));
+else if (!app.isPackaged) app.setPath('userData', path.join(__dirname, '.devdata'));
+
+// Los ajustes y el estado de la ventana: dev → data/, empaquetada → userData.
+const store = require('./src/store.cjs');
+const ipc = require('./src/ipc.cjs');
 
 // Inbox y outbox: en desarrollo van junto al proyecto (el sandbox de Claude
 // virtualiza las escrituras a AppData en un overlay que Explorer no ve;
 // C:\tools pasa directo al disco real). Empaquetada y lanzada por Fran,
 // AppData es seguro y sobrevive reinstalaciones.
-const dataDir = app.isPackaged ? app.getPath('userData') : __dirname;
+const dataDir = process.env.UMBRAL_DATA || (app.isPackaged ? app.getPath('userData') : __dirname);
 const inboxDir = path.join(dataDir, 'inbox');
 const outbox = createOutbox(path.join(dataDir, 'outbox'));
 
@@ -162,35 +207,71 @@ async function listImages() {
 // Ventana
 // ---------------------------------------------------------------------------
 
-function createWindow() {
-  const WIN_W = 1240;
-  const WIN_H = 820;
+/* ── Estado de la ventana ────────────────────────────────────────────────────
+   Recordar tamaño y posición entre sesiones. La trampa: si el monitor donde
+   estaba ya no existe, la posición guardada deja la ventana en la nada. Por
+   eso se valida contra las pantallas actuales antes de usarla. */
+const winState = store.doc('window', null);
 
-  // Centro sobre el área útil del display primario (descuenta taskbar).
-  // A mano, porque pasamos x/y explícitos abajo (off-screen) y eso desactiva
-  // el auto-centrado de Electron.
-  const { x: waX, y: waY, width: waW, height: waH } = screen.getPrimaryDisplay().workArea;
-  const winX = Math.round(waX + (waW - WIN_W) / 2);
-  const winY = Math.round(waY + (waH - WIN_H) / 2);
+function visibleOn(x, y, w, h) {
+  return screen.getAllDisplays().some((d) => {
+    const a = d.workArea;
+    // Con que se vea una esquina razonable alcanza para poder agarrarla.
+    return x + w > a.x + 40 && x < a.x + a.width - 40
+        && y + h > a.y && y < a.y + a.height - 40;
+  });
+}
 
+// A mano, porque la ventana nace con x/y explícitos (off-screen) y eso
+// desactiva el auto-centrado de Electron.
+function centered(w, h) {
+  const a = screen.getPrimaryDisplay().workArea;
+  return { x: Math.round(a.x + (a.width - w) / 2), y: Math.round(a.y + (a.height - h) / 2) };
+}
+
+async function loadWindowState() {
+  const s = await winState.read().catch(() => null);
+  const w = Math.max(MIN_W, Number(s?.width) || DEFAULT_W);
+  const h = Math.max(MIN_H, Number(s?.height) || DEFAULT_H);
+  const hasPos = Number.isFinite(s?.x) && Number.isFinite(s?.y) && visibleOn(s.x, s.y, w, h);
+  return { width: w, height: h, maximized: !!s?.maximized, ...(hasPos ? { x: s.x, y: s.y } : centered(w, h)) };
+}
+
+let saveTimer = null;
+function saveWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed() || SMOKE) return;
+  clearTimeout(saveTimer);
+  // Debounce: arrastrar una ventana emite decenas de eventos por segundo.
+  saveTimer = setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const maximized = mainWindow.isMaximized();
+    // El bounds NORMAL: con el maximizado, al desmaximizar la próxima vez la
+    // ventana quedaría del tamaño de la pantalla y sin poder volver.
+    const b = mainWindow.getNormalBounds();
+    winState.write({ x: b.x, y: b.y, width: b.width, height: b.height, maximized })
+      .catch((err) => console.error('[window] no se pudo guardar el estado:', err.message));
+  }, 400);
+}
+
+function createWindow(state) {
   mainWindow = new BrowserWindow({
-    // Crear fuera de pantalla: el flash del compositor DWM en el primer show()
-    // ocurre donde el usuario no lo ve. Snapeamos al centro justo después.
+    // Nace fuera de pantalla: el flash del compositor ocurre donde nadie lo ve.
     x: -20000,
     y: -20000,
-    width: WIN_W,
-    height: WIN_H,
-    minWidth: 900,
-    minHeight: 600,
+    width: state.width,
+    height: state.height,
+    minWidth: MIN_W,
+    minHeight: MIN_H,
     frame: false,
     show: false,
     icon: path.join(__dirname, 'assets', 'icon.png'),
     paintWhenInitiallyHidden: true,
-    backgroundColor: '#0b0a0f', // base de Umbral; tiñe el frame fantasma de DWM
+    backgroundColor: BG,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      spellcheck: false,
     },
   });
 
@@ -199,22 +280,38 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     // El flash DWM ocurre acá — off-screen, invisible.
     mainWindow.show();
-    // Dejar que DWM asiente el show off-screen antes de mover;
-    // demasiado rápido dispara un segundo flash en el destino.
+    if (SMOKE) return;
     setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setPosition(winX, winY);
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.setPosition(state.x, state.y);
+      if (state.maximized) mainWindow.maximize();
     }, 200);
   });
 
-  // Relay de la consola del renderer al stdout (debug en desarrollo)
-  mainWindow.webContents.on('console-message', (e) => {
-    if (e.level === 'warning' || e.level === 'error') {
-      console.log(`[renderer:${e.level}] ${e.message} (${e.sourceId}:${e.lineNumber})`);
-    }
-  });
+  // En dev, la consola del renderer sale por la terminal: si un módulo no
+  // carga o una vista revienta, se ve acá sin abrir devtools.
+  if (!app.isPackaged) {
+    mainWindow.webContents.on('console-message', (e) => {
+      if (e.level === 'warning' || e.level === 'error') {
+        console.log(`[renderer:${e.level}] ${e.message} (${e.sourceId}:${e.lineNumber})`);
+      }
+    });
+    mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+      console.error(`[renderer] no cargó (${code} ${desc}) → ${url}`);
+    });
+  }
 
-  mainWindow.on('maximize', () => sendWin('win:maximized', true));
-  mainWindow.on('unmaximize', () => sendWin('win:maximized', false));
+  mainWindow.on('maximize', () => { sendWin('win:maximized', true); saveWindowState(); });
+  mainWindow.on('unmaximize', () => { sendWin('win:maximized', false); saveWindowState(); });
+  mainWindow.on('resize', saveWindowState);
+  mainWindow.on('move', saveWindowState);
+
+  // Nada de navegación fuera de la app; los links externos van al navegador.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
 
   // Cerrar no cierra: esconde al tray y el servidor sigue recibiendo capturas.
   mainWindow.on('close', (e) => {
@@ -409,21 +506,34 @@ ipcMain.handle('update:download', () => updater.download());
 ipcMain.handle('update:install', () => updater.install(() => { quitting = true; }));
 ipcMain.handle('update:open', () => shell.openExternal(updater.get().url));
 
+/* La titlebar es nuestra (frame:false): minimizar, maximizar y cerrar los
+   cablea la app. Cerrar esconde al tray (ver 'close' en createWindow). */
 ipcMain.on('win:minimize', () => mainWindow?.minimize());
-ipcMain.on('win:maximize', () => {
+ipcMain.on('win:toggle-maximize', () => {
   if (!mainWindow) return;
   mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
 });
 ipcMain.on('win:close', () => mainWindow?.close());
+ipcMain.handle('win:is-maximized', () => (mainWindow ? mainWindow.isMaximized() : false));
+
+// El renderer manda su --ox-bg ya resuelto a hex: el frame fantasma del
+// restore sigue camuflado aunque cambie el matiz en tokens.css.
+ipcMain.on('win:set-bg', (_e, hex) => {
+  if (mainWindow && !mainWindow.isDestroyed() && /^#[0-9a-f]{6}$/i.test(String(hex))) {
+    mainWindow.setBackgroundColor(hex);
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Arranque
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(async () => {
+  ipc.register();
   await fsp.mkdir(inboxDir, { recursive: true });
   await outbox.load();
-  pendingArgs.push(...argFiles(process.argv.slice(1)));
+  // En el humo, argv trae el archivo del test: no es un «Enviar a».
+  if (!SMOKE) pendingArgs.push(...argFiles(process.argv.slice(1)));
 
   // Servidor primero: cuando el renderer pida server:info, ya está la dirección.
   const { port } = await createUmbralServer({
@@ -441,7 +551,8 @@ app.whenReady().then(async () => {
   serverInfo = { ip, port, url: `http://${ip}:${port}` };
   console.log(`[umbral] escuchando en ${serverInfo.url} — inbox: ${inboxDir}`);
 
-  createWindow();
+  createWindow(await loadWindowState());
+  if (SMOKE) return;
   updater.init({ getWin: () => mainWindow, onChange: refreshTrayMenu });
   createTray();
   ensureSendToShortcut();

@@ -1,756 +1,321 @@
-/* Umbral — la puerta entre el teléfono y la UCX
-   ADN: solo dark, todo transiciona, todo control es propio. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   UMBRAL — lo propio de la app
+   Convive con las hojas `ox-` de Onyx y solo usa sus tokens: ningún valor
+   crudo de color. Prefijo `ub-`.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ---------------------------------------------------------------- tokens */
+/* ── El chasis: sin rail ni statusbar ───────────────────────────────────────
+   Umbral navega con el segmentado de la barra. Sin statusbar abajo, el
+   scroll de la vista se esfuma al aire (no hay línea que lo cierre) y los
+   toasts bajan hasta el borde de la ventana. */
+.ub-app { grid-template-rows: var(--ox-titlebar) auto 1fr; }
+.ub-app .ox-body { grid-template-columns: 1fr; }
+/* motion.css clava la vista (y su calco del fundido) en la columna 2, la que
+   va al lado del rail. Sin rail, la columna 2 nacía implícita y la vista
+   quedaba en la mitad derecha de la ventana. */
+.ub-app .ox-body > .ox-main { grid-column: 1; }
+.ox-toasts { bottom: var(--ox-5); }
 
-:root {
-  --bg: #0b0a0f;
-  --bg-elev1: #14121b;
-  --bg-elev2: #1c1926;
-  --bg-elev3: #262133;
-
-  --text: #e9e6f4;
-  --text-2: #a79fbf;
-  --muted: #6a6382;
-
-  --accent: #9d7bff;
-  --accent-bright: #cbb8ff;
-  --accent-soft: rgba(157, 123, 255, 0.28);
-  --accent-dim: rgba(157, 123, 255, 0.12);
-
-  --danger: #ff5c7a;
-  --danger-soft: rgba(255, 92, 122, 0.14);
-  --ok: #7ee2b8;
-
-  --scroll-thumb: #2a2638;
-  --scroll-thumb-hover: #3a3450;
-
-  --radius: 8px;
-  --thumb: 220px;
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
-
-  --sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
-  --mono: 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
-}
-
-/* ---------------------------------------------------------------- base */
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
-html, body {
-  height: 100%;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--sans);
-  font-size: 14px;
-  overflow: hidden;
-}
-
-body {
-  display: flex;
-  flex-direction: column;
-  /* chrome no seleccionable (feel nativo); el contenido opta con .selectable */
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.selectable, code, input {
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-::selection { background: var(--accent-soft); color: var(--text); }
-
-:focus { outline: none; }
-:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
-  border-radius: inherit;
-}
-
-img { -webkit-user-drag: none; }
-
-/* [hidden] SIEMPRE gana: sin esto, un display:grid/flex de clase
-   lo pisa y el overlay queda invisible pero comiéndose los clicks */
-[hidden] { display: none !important; }
-
-button {
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-
-code { font-family: var(--mono); }
-
-/* scrollbars propias */
-*::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb {
-  background: var(--scroll-thumb);
-  border-radius: 8px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-*::-webkit-scrollbar-thumb:hover {
-  background: var(--scroll-thumb-hover);
-  background-clip: content-box;
-}
-*::-webkit-scrollbar-corner { background: transparent; }
-
-/* ---------------------------------------------------------------- titlebar */
-
-#titlebar {
+/* ── La barra ─────────────────────────────────────────────────────────────── */
+.ub-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  height: 42px;
-  padding-left: 14px;
-  flex-shrink: 0;
-  -webkit-app-region: drag;
+  gap: var(--ox-3);
+  min-width: 0;
+  padding: var(--ox-3) var(--ox-6) var(--ox-2);
+  --ox-plegable-gap: var(--ox-3);
+}
+.ub-bar__sep { align-self: center; height: 18px; margin-inline: var(--ox-1); }
+.ub-bar__group { display: flex; align-items: center; gap: var(--ox-1); }
+/* El plegable recorta (overflow: clip) y el anillo de foco sale 3.5 px por
+   fuera: le deja ese aire adentro y lo devuelve con margen negativo. Al
+   plegarse, el padding de los costados va a 0 con el ancho. */
+.ub-bar__group.ox-plegable--ancho { padding-block: 4px; margin-block: -4px; }
+.ub-bar__group.ox-plegable--ancho:not([hidden]) { padding-inline: 4px; margin-inline: -4px; }
+@starting-style {
+  .ub-bar__group.ox-plegable--ancho:not([hidden]) { padding-inline: 0; margin-inline: 0 calc(-1 * var(--ox-plegable-gap)); }
 }
 
-.tb-brand { display: flex; align-items: center; gap: 9px; }
-
-.tb-logo { display: flex; color: var(--accent); }
-
-.tb-name {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--text-2);
-}
-
-.tb-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
-
-.tb-btn {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 100%;
-  color: var(--muted);
-  transition: background 0.15s var(--ease), color 0.15s var(--ease);
-}
-.tb-btn:hover { background: var(--bg-elev2); color: var(--text); }
-.tb-close:hover { background: var(--danger-soft); color: var(--danger); }
-
-/* ---------------------------------------------------------------- toolbar */
-
-#toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 6px 18px 12px;
-  flex-shrink: 0;
-}
-
-.tool-left, .tool-right { display: flex; align-items: center; gap: 10px; }
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ok);
-  animation: pulse 2.6s var(--ease) infinite;
-}
-@keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(126, 226, 184, 0.35); }
-  50% { box-shadow: 0 0 0 5px rgba(126, 226, 184, 0); }
-}
-
-#addr {
-  font-size: 12.5px;
-  color: var(--text-2);
-  background: var(--bg-elev1);
-  padding: 5px 10px;
-  border-radius: 6px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-}
-
-/* selector de vista */
-.seg {
-  position: relative;
-  display: flex;
-  padding: 3px;
-  border-radius: 9px;
-  background: var(--bg-elev1);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-}
-.seg-ind {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 0;
-  border-radius: 7px;
-  background: var(--bg-elev3);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  transition: transform 0.26s var(--ease), width 0.26s var(--ease);
-}
-.seg-btn {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 12px;
-  border-radius: 7px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--muted);
-  transition: color 0.18s var(--ease);
-}
-.seg-btn:hover { color: var(--text-2); }
-.seg-btn.on { color: var(--text); }
-.seg-n {
-  min-width: 18px;
-  padding: 1px 5px;
-  border-radius: 9px;
-  font-size: 11px;
+.ub-count {
+  margin-left: 2px;
+  font-family: var(--ox-mono);
+  font-size: var(--ox-fs-10);
   font-variant-numeric: tabular-nums;
-  text-align: center;
-  background: var(--bg-elev2);
-  color: var(--text-2);
-  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+  color: var(--ox-text-4);
+  transition: var(--tr-color);
 }
-.seg-n.hot { background: var(--accent); color: #120e1c; }
+.ox-segmented__opt.is-active .ub-count { color: var(--ox-text-3); }
+/* Algo esperando al celu: el número se enciende. */
+.ub-count.is-hot,
+.ox-segmented__opt.is-active .ub-count.is-hot { color: var(--ox-accent); }
 
-.tool-sep { width: 1px; height: 18px; background: rgba(255, 255, 255, 0.07); margin: 0 4px; }
-
-.out-tools {
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  transform: translateX(6px);
-  pointer-events: none;
-  transition: opacity 0.2s var(--ease), transform 0.2s var(--ease);
-}
-.out-tools.show { opacity: 1; transform: none; pointer-events: auto; }
-
-.icon-btn {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 7px;
-  color: var(--text-2);
-  transition: background 0.15s var(--ease), color 0.15s var(--ease), transform 0.15s var(--ease);
-}
-.icon-btn:hover { background: var(--bg-elev2); color: var(--text); }
-.icon-btn:active { transform: scale(0.92); }
-.icon-btn.danger:hover { background: var(--danger-soft); color: var(--danger); }
-.icon-btn:disabled { opacity: 0.35; pointer-events: none; }
-
-/* slider de tamaño */
-.size-ctl { display: flex; align-items: center; gap: 8px; }
-.size-ico { display: flex; color: var(--muted); }
-
-input[type='range'] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 130px;
-  background: transparent;
-}
-input[type='range']::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--bg-elev3);
-}
-input[type='range']::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  margin-top: -5px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
-  transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease);
-}
-input[type='range']:hover::-webkit-slider-thumb {
-  transform: scale(1.2);
-  box-shadow: 0 0 0 5px var(--accent-dim);
-}
-
-/* ---------------------------------------------------------------- galería */
-
-#views {
-  flex: 1;
-  position: relative;
-  min-height: 0;
-}
-
-/* dos vistas apiladas; la activa entra con fundido y un leve desplazamiento */
-.view {
-  position: absolute;
-  inset: 0;
-  overflow-y: auto;
-  --fade: 18px;
-  opacity: 0;
-  transform: translateY(6px);
-  visibility: hidden;
-  transition: opacity 0.22s var(--ease), transform 0.22s var(--ease), visibility 0s linear 0.22s;
-}
-.view.active {
-  opacity: 1;
-  transform: none;
-  visibility: visible;
-  transition: opacity 0.22s var(--ease), transform 0.22s var(--ease), visibility 0s;
-}
-/* fade dinámico donde el scroll recorta (clases via JS) */
-.view.fade-top {
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--fade));
-          mask-image: linear-gradient(to bottom, transparent 0, #000 var(--fade));
-}
-.view.fade-bottom {
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent 100%);
-          mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent 100%);
-}
-.view.fade-top.fade-bottom {
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--fade), #000 calc(100% - var(--fade)), transparent 100%);
-          mask-image: linear-gradient(to bottom, transparent 0, #000 var(--fade), #000 calc(100% - var(--fade)), transparent 100%);
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--thumb), 1fr));
-  align-items: start;
-  gap: 14px;
-  padding: 18px 18px 24px;
-}
-
-.card {
-  position: relative;
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--bg-elev1);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-  cursor: zoom-in;
-  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), opacity 0.2s var(--ease);
-}
-.card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), inset 0 0 0 1px var(--accent-soft);
-}
-.card img { display: block; width: 100%; height: auto; }
-
-.card-time {
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  padding: 18px 10px 7px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-2);
-  background: linear-gradient(to top, rgba(6, 5, 10, 0.85), transparent);
-  opacity: 0;
-  transform: translateY(4px);
-  transition: opacity 0.18s var(--ease), transform 0.18s var(--ease);
-  pointer-events: none;
-}
-.card:hover .card-time { opacity: 1; transform: none; }
-
-.card.entering { opacity: 0; transform: translateY(12px) scale(0.96); }
-.card.leaving { opacity: 0; transform: scale(0.9); pointer-events: none; }
-
-/* ---------------------------------------------------------------- bandeja de salida */
-
-.out-card .card-img { transition: filter 0.3s var(--ease); }
-.out-card.delivered .card-img { filter: saturate(0.5) brightness(0.7); }
-.out-card.file { cursor: default; }
-
-.file-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  aspect-ratio: 4 / 3;
-  padding: 16px;
-  color: var(--muted);
-  background: var(--bg-elev2);
-  transition: filter 0.3s var(--ease);
-}
-.out-card.delivered .file-tile { filter: brightness(0.75); }
-.file-tile b {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  color: var(--text-2);
-}
-.file-tile .file-name {
-  max-width: 100%;
-  font-size: 12px;
-  color: var(--text);
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.ub-server { display: flex; align-items: center; gap: var(--ox-2); min-width: 0; }
+.ub-addr {
+  padding: 3px var(--ox-2);
+  border-radius: var(--ox-r-sm);
+  background: var(--ox-sunken);
+  box-shadow: var(--ox-hairline);
+  font-size: var(--ox-fs-11);
+  color: var(--ox-text-2);
   white-space: nowrap;
 }
+.ub-addr:empty { display: none; }
 
-.pill {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px 3px 7px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-2);
-  background: rgba(11, 10, 15, 0.72);
-  backdrop-filter: blur(4px);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-  transition: background 0.3s var(--ease), color 0.3s var(--ease);
-}
-.pill .dot {
-  width: 6px;
-  height: 6px;
-  margin: 0 2px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: pulse-accent 2.2s var(--ease) infinite;
-}
-@keyframes pulse-accent {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(157, 123, 255, 0.45); }
-  50% { box-shadow: 0 0 0 4px rgba(157, 123, 255, 0); }
-}
-.out-card.delivered .pill { background: var(--ok); color: #0b1a14; }
+.ub-size { display: flex; align-items: center; gap: var(--ox-2); color: var(--ox-text-4); }
+.ub-size .ox-slider { width: 120px; }
 
-/* velo de arrastre */
-.drop-veil {
-  position: absolute;
-  inset: 8px 14px 14px;
-  z-index: 20;
+/* La purga es el botón que no tiene vuelta atrás: se enciende en rojo recién
+   cuando el mouse está encima, no antes. */
+.ub-nuke:hover:not(:disabled) { color: var(--ox-danger); background: var(--ox-danger-wash); }
+
+/* ── La galería ───────────────────────────────────────────────────────────── */
+.ub-grid {
   display: grid;
-  place-items: center;
-  border-radius: 14px;
-  background: rgba(11, 10, 15, 0.78);
-  box-shadow: inset 0 0 0 2px var(--accent-soft);
-  backdrop-filter: blur(6px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s var(--ease), box-shadow 0.2s var(--ease);
+  grid-template-columns: repeat(auto-fill, minmax(var(--ub-thumb, 220px), 1fr));
+  align-items: start;
+  gap: var(--ox-4);
+  padding-bottom: var(--ox-4);
 }
-.drop-veil.show { opacity: 1; box-shadow: inset 0 0 0 2px var(--accent); }
-.drop-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  color: var(--accent);
-  transform: scale(0.96);
-  transition: transform 0.2s var(--ease);
+
+.ub-card {
+  position: relative;
+  margin: 0;
+  border-radius: var(--ox-r-md);
+  overflow: hidden;
+  background: var(--ox-s2);
+  --ox-surface: var(--ox-s2);
+  box-shadow: var(--ox-hairline), var(--ox-e1);
+  cursor: zoom-in;
+  transition: transform var(--ox-t-2) var(--ox-ease), box-shadow var(--ox-t-2) var(--ox-ease);
 }
-.drop-veil.show .drop-card { transform: none; }
-.drop-card h2 { font-size: 16px; font-weight: 600; color: var(--text); }
-
-.inline-ico { display: inline-flex; vertical-align: -2px; }
-.empty-hint { margin-top: 6px; }
-.empty-hint code {
-  font-size: 12px;
-  color: var(--accent);
-  background: var(--accent-dim);
-  padding: 2px 8px;
-  border-radius: 5px;
-  pointer-events: auto;
+.ub-card:hover {
+  transform: translateY(-2px);
+  box-shadow: inset 0 0 0 1px var(--ox-wash-3), var(--ox-e3);
 }
-.empty p strong { color: var(--text-2); font-weight: 600; }
-.empty p { line-height: 1.6; }
+/* El hover le pisaría el anillo de foco de base.css: lo declara de nuevo. */
+.ub-card:focus-visible { box-shadow: 0 0 0 2px var(--ox-bg), 0 0 0 3.5px var(--ox-ring), var(--ox-e1); }
+.ub-card img { display: block; width: 100%; height: auto; -webkit-user-drag: none; }
 
-/* ---------------------------------------------------------------- empty */
+/* Al arrancar las tarjetas entran escalonadas (stagger le pone --i). Una
+   tarjeta nueva no la usa: de entrar se encarga reconcile(). */
+.ub-grid--entra > .ub-card {
+  animation: ox-rise-in var(--ox-t-3) var(--ox-ease) both;
+  animation-delay: calc(min(var(--i, 0), 20) * 24ms);
+}
 
-.empty {
+.ub-card__time {
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: var(--ox-5) var(--ox-3) var(--ox-2);
+  font-family: var(--ox-mono);
+  font-size: var(--ox-fs-10);
+  color: var(--ox-text-2);
+  background: linear-gradient(to top, color-mix(in oklab, var(--ox-sunken) 88%, transparent), transparent);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity var(--ox-t-2) var(--ox-ease), transform var(--ox-t-2) var(--ox-ease);
+  pointer-events: none;
+}
+.ub-card:is(:hover, :focus-visible) .ub-card__time { opacity: 1; transform: none; }
+
+/* Para el celu: lo que ya bajó se apaga, lo que no es imagen es una ficha. */
+.ub-card--file { cursor: default; }
+.ub-card img,
+.ub-file { transition: filter var(--ox-t-3) var(--ox-ease); }
+.ub-card.is-delivered img { filter: saturate(.5) brightness(.7); }
+.ub-card.is-delivered .ub-file { filter: brightness(.75); }
+
+.ub-file {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  text-align: center;
-  pointer-events: none;
-  opacity: 0;
-  /* escala y no translate: un desplazamiento hacia abajo desborda la vista
-     y aparece una scrollbar sin nada que scrollear */
-  transform: scale(0.98);
-  transition: opacity 0.35s var(--ease), transform 0.35s var(--ease);
+  gap: var(--ox-2);
+  aspect-ratio: 4 / 3;
+  padding: var(--ox-4);
+  color: var(--ox-text-4);
+  background: var(--ox-s3);
 }
-.empty.show { opacity: 1; transform: none; }
-.empty-arch { display: flex; color: var(--bg-elev3); margin-bottom: 6px; }
-.empty h2 { font-size: 17px; font-weight: 600; color: var(--text-2); }
-.empty p { font-size: 13px; color: var(--muted); }
-.empty code {
-  pointer-events: auto;
-  margin-top: 8px;
-  font-size: 12.5px;
-  color: var(--accent);
-  background: var(--accent-dim);
-  padding: 5px 12px;
-  border-radius: 6px;
+.ub-file > .ox-icon { width: 30px; height: 30px; stroke-width: 1.1; }
+.ub-file__ext {
+  font-family: var(--ox-mono);
+  font-size: var(--ox-fs-10);
+  letter-spacing: var(--ox-track-caps);
+  color: var(--ox-text-3);
 }
+.ub-file__name { max-width: 100%; font-size: var(--ox-fs-12); color: var(--ox-text); text-align: center; }
 
-/* ---------------------------------------------------------------- QR pop */
-
-.qr-pop {
-  position: fixed;
-  z-index: 60;
-  top: 92px;
-  left: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  background: var(--bg-elev2);
-  border-radius: 12px;
-  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-  opacity: 0;
-  transform: translateY(-6px) scale(0.97);
-  transform-origin: top left;
-  transition: opacity 0.2s var(--ease), transform 0.2s var(--ease);
-  pointer-events: none;
-}
-.qr-pop.show { opacity: 1; transform: none; pointer-events: auto; }
-.qr-card {
-  padding: 8px;
-  background: #f2f0fa;
-  border-radius: 9px;
-  display: flex;
-}
-.qr-card img { display: block; width: 190px; height: 190px; }
-.qr-pop p { font-size: 12px; color: var(--text-2); max-width: 206px; }
-
-/* ---------------------------------------------------------------- ctx menu */
-
-.ctx {
-  position: fixed;
-  z-index: 250; /* por encima del visor (150): el menú también se abre ahí */
-  min-width: 168px;
-  padding: 6px;
-  background: var(--bg-elev2);
-  border-radius: 9px;
-  box-shadow: 0 12px 38px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-  opacity: 0;
-  transform: scale(0.96);
-  transition: opacity 0.14s var(--ease), transform 0.14s var(--ease);
-}
-.ctx.show { opacity: 1; transform: none; }
-
-.ctx-item {
+.ub-pill {
+  position: absolute;
+  top: var(--ox-2);
+  right: var(--ox-2);
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--text-2);
-  transition: background 0.13s var(--ease), color 0.13s var(--ease);
-}
-.ctx-item:hover { background: var(--bg-elev3); color: var(--text); }
-.ctx-item.ctx-danger:hover { background: var(--danger-soft); color: var(--danger); }
-
-/* ---------------------------------------------------------------- modal */
-
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: grid;
-  place-items: center;
-  background: rgba(6, 5, 10, 0.6);
+  gap: var(--ox-1);
+  height: 22px;
+  padding: 0 var(--ox-2) 0 6px;
+  border-radius: var(--ox-r-pill);
+  font-size: var(--ox-fs-11);
+  font-weight: var(--ox-w-medium);
+  color: var(--ox-text-2);
+  background: color-mix(in oklab, var(--ox-bg) 78%, transparent);
   backdrop-filter: blur(4px);
-  opacity: 0;
-  transition: opacity 0.22s var(--ease);
+  box-shadow: var(--ox-hairline), var(--ox-e1);
+  transition: background var(--ox-t-3) var(--ox-ease), color var(--ox-t-3) var(--ox-ease);
 }
-.modal-overlay.show { opacity: 1; }
-
-.modal {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  width: 340px;
-  padding: 26px 24px 20px;
-  background: var(--bg-elev1);
-  border-radius: 14px;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-  text-align: center;
-  transform: translateY(10px) scale(0.96);
-  transition: transform 0.22s var(--ease);
+.ub-pill .ox-mark { width: 12px; height: 12px; }
+.ub-pill .ox-icon { width: 12px; height: 12px; }
+.ub-card.is-delivered .ub-pill {
+  color: var(--ox-accent);
+  background: color-mix(in oklab, var(--ox-bg) 70%, var(--ox-accent) 16%);
 }
-.modal-overlay.show .modal { transform: none; }
 
-.modal-icon {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  background: var(--danger-soft);
-  color: var(--danger);
-  margin-bottom: 4px;
+/* El vacío lleva su marca grande y la dirección, que es lo que hay que tipear. */
+.ub-empty > .ox-icon { width: 72px; height: 72px; stroke-width: .8; color: var(--ox-s4); }
+.ub-empty .ox-empty__text { max-width: 380px; }
+.ub-empty__addr {
+  margin-top: var(--ox-1);
+  padding: 4px var(--ox-3);
+  border-radius: var(--ox-r-sm);
+  font-family: var(--ox-mono);
+  font-size: var(--ox-fs-12);
+  color: var(--ox-accent);
+  background: var(--ox-wash-1);
+  box-shadow: inset 0 0 0 1px var(--ox-wash-2);
 }
-.modal h3 { font-size: 16px; font-weight: 600; }
-.modal p { font-size: 13px; color: var(--text-2); line-height: 1.5; }
-.modal-actions { display: flex; gap: 10px; margin-top: 14px; }
+.ub-empty__inline { display: inline-flex; vertical-align: -2px; }
+.ub-empty__inline .ox-icon { width: 11px; height: 11px; }
+.ub-empty strong { font-weight: var(--ox-w-medium); color: var(--ox-text-3); }
 
-.btn {
-  padding: 8px 18px;
-  border-radius: 7px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-2);
-  background: var(--bg-elev2);
-  transition: background 0.15s var(--ease), color 0.15s var(--ease), transform 0.15s var(--ease);
-}
-.btn:hover { background: var(--bg-elev3); color: var(--text); }
-.btn:active { transform: scale(0.95); }
-.btn-accent { background: var(--accent-dim); color: var(--accent-bright); }
-.btn-accent:hover { background: var(--accent-soft); color: #fff; }
-.btn-danger { background: var(--danger-soft); color: var(--danger); }
-.btn-danger:hover { background: rgba(255, 92, 122, 0.24); color: #ff7d95; }
+/* ── Overlays propios ─────────────────────────────────────────────────────── */
 
-/* ---------------------------------------------------------------- lightbox */
+/* Un Modal.confirm no trae cuerpo, pero el de Onyx lo arma igual, con su
+   padding: quedaba una franja vacía de 40 px entre el texto y los botones. */
+.ox-modal__body:empty { display: none; }
 
-.lightbox {
+/* El ancla invisible del menú contextual: un punto en el cursor. */
+.ub-anchor { position: fixed; width: 0; height: 0; pointer-events: none; }
+
+/* El visor. vw/vh y no %: dentro de un grid con pistas auto los porcentajes
+   no resuelven y la imagen salía a tamaño natural (2400 px de teléfono). */
+.ub-lightbox {
   position: fixed;
   inset: 0;
-  z-index: 150;
   display: grid;
   place-items: center;
-  background: rgba(6, 5, 10, 0.72);
+  background: color-mix(in oklab, var(--ox-sunken) 76%, transparent);
   backdrop-filter: blur(6px);
   cursor: zoom-out;
-  opacity: 0;
-  transition: opacity 0.24s var(--ease);
+  animation: ox-fade-in var(--ox-t-3) var(--ox-ease) both;
 }
-.lightbox.show { opacity: 1; }
-.lightbox img {
-  /* vw/vh, no %: dentro de un grid con tracks auto los porcentajes
-     no resuelven y la imagen sale a tamaño natural (2400px de teléfono) */
+.ub-lightbox img {
   max-width: 92vw;
-  max-height: 92vh;
-  border-radius: 10px;
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.7);
-  transform: scale(0.97);
-  transition: transform 0.24s var(--ease);
+  max-height: 88vh;
+  border-radius: var(--ox-r-lg);
+  box-shadow: var(--ox-e4);
+  animation: ox-lift-in var(--ox-t-3) var(--ox-ease) both;
+  -webkit-user-drag: none;
 }
-.lightbox.show img { transform: none; }
+.ub-lightbox[data-state='closing'] { animation: ox-fade-out var(--ox-t-2) var(--ox-ease-in) both; }
+.ub-lightbox[data-state='closing'] img { animation: ox-lift-out var(--ox-t-2) var(--ox-ease-in) both; }
 
-/* ---------------------------------------------------------------- toasts */
-
-#toasts {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  z-index: 300;
+/* El QR, colgado del botón que lo abre. */
+.ub-qr {
+  position: absolute;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-  pointer-events: none;
+  gap: var(--ox-3);
+  width: 232px;
+  padding: var(--ox-3);
+  border-radius: var(--ox-r-lg);
+  background: var(--ox-s3);
+  --ox-surface: var(--ox-s3);
+  box-shadow: var(--ox-hairline), var(--ox-e4);
+  transform-origin: top left;
+  animation: ox-pop-in var(--ox-t-2) var(--ox-ease) both;
 }
+.ub-qr[data-state='closing'] { animation: ox-pop-out 110ms var(--ox-ease-in) both; }
+/* Oscuro sobre claro: es lo único claro de la app, y es así porque escanea siempre. */
+.ub-qr__code {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: var(--ox-2);
+  border-radius: var(--ox-r-md);
+  background: #f2f0fa;
+}
+.ub-qr__code img { display: block; width: 100%; height: 100%; }
+.ub-qr__code:empty { background: var(--ox-sunken); }
+.ub-qr__text { font-size: var(--ox-fs-12); color: var(--ox-text-3); line-height: var(--ox-lh-loose); }
 
-.toast {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
-  background: var(--bg-elev2);
-  border-radius: 9px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-  font-size: 13px;
-  color: var(--text);
-  opacity: 0;
-  transform: translateY(8px);
-  transition: opacity 0.22s var(--ease), transform 0.22s var(--ease);
+/* El velo de arrastrar archivos. */
+.ub-veil {
+  position: fixed;
+  inset: calc(var(--ox-titlebar) + var(--ox-2)) var(--ox-4) var(--ox-4);
+  display: grid;
+  place-items: center;
+  border-radius: var(--ox-r-xl);
+  background: color-mix(in oklab, var(--ox-bg) 80%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: inset 0 0 0 1.5px var(--ox-accent);
+  pointer-events: none;
+  animation: ox-fade-in var(--ox-t-2) var(--ox-ease) both;
 }
-.toast.show { opacity: 1; transform: none; }
-.toast img {
+#ox-layer > .ub-veil { pointer-events: none; }
+.ub-veil[data-state='closing'] { animation: ox-fade-out var(--ox-t-2) var(--ox-ease-in) both; }
+.ub-veil__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ox-3);
+  color: var(--ox-accent);
+  animation: ox-pop-in var(--ox-t-3) var(--ox-ease) both;
+}
+.ub-veil__card > .ox-icon { width: 40px; height: 40px; stroke-width: 1.1; }
+.ub-veil__title { font-size: var(--ox-fs-15); font-weight: var(--ox-w-medium); color: var(--ox-text); }
+
+/* La miniatura que reemplaza al ícono en el toast de «Captura recibida». */
+.ub-toast-thumb {
+  flex: 0 0 auto;
   width: 28px;
   height: 28px;
+  margin: -4px 0;
+  border-radius: var(--ox-r-xs);
   object-fit: cover;
-  border-radius: 5px;
+  box-shadow: var(--ox-hairline);
 }
-.toast-ico { display: flex; color: var(--ok); }
-.toast-ico.bad { color: var(--danger); }
 
-/* ---------------------------------------------------------------- actualización */
-
-.upd {
-  position: fixed;
-  left: 18px;
-  bottom: 18px;
-  z-index: 300;
+/* ── La tarjeta de actualización (abajo a la izquierda; los toasts van a la derecha) */
+.ub-upd {
+  position: absolute;
+  left: var(--ox-5);
+  bottom: var(--ox-5);
   width: 300px;
-  padding: 12px 12px 12px 14px;
-  background: var(--bg-elev2);
-  border-radius: 10px;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-  opacity: 0;
-  transform: translateY(10px);
-  transition: opacity 0.24s var(--ease), transform 0.24s var(--ease);
+  padding: var(--ox-3);
+  border-radius: var(--ox-r-lg);
+  background: var(--ox-s3);
+  --ox-surface: var(--ox-s3);
+  box-shadow: var(--ox-hairline), var(--ox-e3);
+  animation: ox-rise-in var(--ox-t-3) var(--ox-ease) both;
 }
-.upd.show { opacity: 1; transform: none; }
-
-.upd-head { display: flex; align-items: flex-start; gap: 11px; }
-.upd-ico {
+.ub-upd[data-state='closing'] { animation: ox-rise-out var(--ox-t-2) var(--ox-ease-in) both; }
+.ub-upd__head { display: flex; align-items: flex-start; gap: var(--ox-3); }
+.ub-upd__ico {
   display: grid;
   place-items: center;
   flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: var(--accent-dim);
-  color: var(--accent-bright);
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ox-r-md);
+  background: var(--ox-wash-1);
+  color: var(--ox-accent);
 }
-.upd-ico.bad { background: var(--danger-soft); color: var(--danger); }
-.upd-ico.ok { background: rgba(126, 226, 184, 0.12); color: var(--ok); }
-.upd-ico.spin svg { animation: upd-spin 1s linear infinite; }
-@keyframes upd-spin { to { transform: rotate(360deg); } }
-
-.upd-txt { flex: 1; min-width: 0; padding-top: 1px; }
-.upd-txt b { display: block; font-size: 13px; font-weight: 600; color: var(--text); }
-.upd-txt span { display: block; margin-top: 2px; font-size: 12px; color: var(--text-2); line-height: 1.4; }
-.upd-x { width: 26px; height: 26px; margin: -3px -3px 0 0; }
-
-.upd-bar {
-  height: 4px;
-  margin-top: 11px;
-  border-radius: 2px;
-  background: var(--bg-elev3);
-  overflow: hidden;
-}
-.upd-bar i {
-  display: block;
-  height: 100%;
-  width: 100%;
-  background: var(--accent);
-  transform-origin: left;
-  transform: scaleX(var(--p, 0));
-  transition: transform 0.3s var(--ease);
-}
-
-.upd-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 11px; }
-.upd-acts .btn { padding: 6px 14px; font-size: 12px; }
-
-/* ---------------------------------------------------------------- tooltip */
-
-.u-tip {
-  position: fixed;
-  z-index: 400;
-  padding: 4px 9px;
-  background: var(--bg-elev3);
-  color: var(--text);
-  border-radius: 6px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-  font-size: 12px;
-  pointer-events: none;
-  white-space: nowrap;
-  opacity: 0;
-  transform: translateY(2px);
-  transition: opacity 0.12s var(--ease), transform 0.12s var(--ease);
-}
-.u-tip.show { opacity: 1; transform: none; }
+.ub-upd__ico.is-bad { background: var(--ox-danger-wash); color: var(--ox-danger); }
+.ub-upd__txt { flex: 1; min-width: 0; padding-top: 1px; }
+.ub-upd__title { font-size: var(--ox-fs-13); font-weight: var(--ox-w-medium); color: var(--ox-text); }
+.ub-upd__sub { margin-top: 2px; font-size: var(--ox-fs-12); color: var(--ox-text-3); line-height: var(--ox-lh-loose); }
+.ub-upd__x { margin: -4px -4px 0 0; }
+.ub-upd .ox-meter { margin-top: var(--ox-3); }
+.ub-upd__acts { display: flex; justify-content: flex-end; gap: var(--ox-2); margin-top: var(--ox-3); }

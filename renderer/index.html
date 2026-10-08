@@ -1,93 +1,116 @@
 <!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self'">
-  <title>Umbral</title>
-  <link rel="stylesheet" href="css/umbral.css">
-</head>
-<body>
-  <header id="titlebar">
-    <div class="tb-brand">
-      <span class="tb-logo" id="tb-logo"></span>
-      <span class="tb-name">Umbral</span>
+<meta charset="utf-8">
+<!-- CSP estricta: sin conexiones externas, sin eval. Las miniaturas son
+     archivos locales (file:) y el QR llega como data:. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:;">
+<title>Umbral</title>
+
+<link rel="stylesheet" href="./css/fonts.css">
+<link rel="stylesheet" href="./css/tokens.css">
+<link rel="stylesheet" href="./css/base.css">
+<link rel="stylesheet" href="./css/motion.css">
+<link rel="stylesheet" href="./css/shell.css">
+<link rel="stylesheet" href="./css/controls.css">
+<link rel="stylesheet" href="./css/surfaces.css">
+<link rel="stylesheet" href="./css/overlays.css">
+<link rel="stylesheet" href="./css/umbral.css">
+
+<style>
+  /* Boot splash: réplica exacta del primer frame. Pinta ANTES de que cargue
+     ningún módulo, así no hay un solo instante sin identidad en pantalla.
+     El color tiene que ser el mismo backgroundColor de la BrowserWindow —
+     literal, no una variable: los tokens todavía podrían no haber cargado. */
+  #boot-splash {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: grid;
+    place-items: center;
+    background: #0b0a0f;
+    transition: opacity .34s cubic-bezier(.16, 1, .3, 1);
+  }
+  #boot-splash svg { width: 46px; height: 46px; stroke: #9d7bff; fill: none;
+                     stroke-width: 1.1; stroke-linecap: round; stroke-linejoin: round; }
+  /* La marca se DIBUJA, no aparece: el arco primero, la rendija de luz detrás.
+     Es el mismo trazo que el ícono `arch` de app.js: si divergen, el arranque
+     pega un salto cuando el splash le pasa la posta a la titlebar. */
+  #boot-splash path { stroke-dasharray: 30; stroke-dashoffset: 30;
+                      animation: boot-draw .72s cubic-bezier(.16,1,.3,1) forwards; }
+  #boot-splash path:last-child { stroke-dasharray: 7; stroke-dashoffset: 7;
+                                 opacity: .34; animation-delay: .1s; }
+  @keyframes boot-draw { to { stroke-dashoffset: 0 } }
+</style>
+
+<div id="boot-splash">
+  <svg viewBox="0 0 16 16">
+    <path d="M3.67 13.67v-6a4.33 4.33 0 0 1 8.66 0v6"/>
+    <path d="M8 7.33v6.34"/>
+  </svg>
+</div>
+
+<div class="ox-app ub-app">
+
+  <!-- ── Titlebar propia: acá no hay frame nativo ─────────────────────────── -->
+  <header class="ox-titlebar">
+    <div class="ox-brand ox-no-drag" id="brand">
+      <svg class="ox-brand__mark ox-icon" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M3.67 13.67v-6a4.33 4.33 0 0 1 8.66 0v6"/>
+        <path class="ox-brand__trail" d="M8 7.33v6.34"/>
+      </svg>
+      <span class="ox-brand__name">Umbral</span>
     </div>
-    <div class="tb-controls">
-      <button id="win-min" class="tb-btn" aria-label="Minimizar"></button>
-      <button id="win-max" class="tb-btn" aria-label="Maximizar"></button>
-      <button id="win-close" class="tb-btn tb-close" aria-label="Cerrar"></button>
+
+    <div class="ox-wincontrols">
+      <button class="ox-wincontrol" id="win-min"   aria-label="Minimizar"><i data-icon="winMin"></i></button>
+      <button class="ox-wincontrol" id="win-max"   aria-label="Maximizar"><i data-icon="winMax"></i></button>
+      <button class="ox-wincontrol ox-wincontrol--close" id="win-close" aria-label="Cerrar"><i data-icon="winClose"></i></button>
     </div>
   </header>
 
-  <div id="toolbar">
-    <div class="tool-left">
-      <div class="seg" id="seg" data-on="in">
-        <span class="seg-ind"></span>
-        <button class="seg-btn on" data-view="in">Recibidas <span class="seg-n" id="n-in">0</span></button>
-        <button class="seg-btn" data-view="out">Para el celu <span class="seg-n" id="n-out">0</span></button>
-      </div>
-      <span class="tool-sep"></span>
-      <span class="status-dot" id="status-dot"></span>
-      <code id="addr" class="selectable">&mdash;</code>
-      <button id="btn-qr" class="icon-btn" data-tip="QR para el tel&eacute;fono"></button>
+  <!-- ── La barra: qué lado del umbral, dónde escucha, y las herramientas ── -->
+  <div class="ub-bar">
+    <!-- Los contadores nacen vacíos: el primer dato no es un cambio. -->
+    <div class="ox-segmented" id="seg">
+      <button class="ox-segmented__opt is-active" data-value="recibidas">Recibidas <span class="ub-count" id="n-in"></span></button>
+      <button class="ox-segmented__opt" data-value="celu">Para el celu <span class="ub-count" id="n-out"></span></button>
     </div>
-    <div class="tool-right">
-      <div class="out-tools" id="out-tools">
-        <button id="btn-add" class="icon-btn" data-tip="Agregar archivos"></button>
-        <button id="btn-sweep" class="icon-btn" data-tip="Quitar las ya bajadas"></button>
-      </div>
-      <div class="size-ctl">
-        <span class="size-ico" id="size-sm"></span>
-        <input type="range" id="thumb-size" min="150" max="420" step="10" aria-label="Tama&ntilde;o de miniaturas">
-        <span class="size-ico" id="size-lg"></span>
-      </div>
-      <button id="btn-folder" class="icon-btn" data-tip="Abrir carpeta"></button>
-      <button id="btn-nuke" class="icon-btn danger" data-tip="Purgar todo"></button>
+
+    <span class="ox-vr ub-bar__sep"></span>
+
+    <div class="ub-server">
+      <span id="srv-mark"></span>
+      <span class="ub-addr ox-mono ox-copyable" id="addr"></span>
+      <button class="ox-iconbtn" id="btn-qr" data-tip="QR para el teléfono" data-tip-side="bottom"><i data-icon="qr"></i></button>
     </div>
-  </div>
 
-  <div id="views">
-    <main id="gallery-wrap" class="view active">
-      <div id="gallery" class="grid"></div>
-      <div id="empty" class="empty">
-        <span class="empty-arch" id="empty-arch"></span>
-        <h2>El umbral est&aacute; despejado</h2>
-        <p>Compart&iacute; una captura desde el tel&eacute;fono y aparece ac&aacute;.</p>
-        <code id="empty-addr" class="selectable"></code>
-      </div>
-    </main>
+    <div class="ox-spacer"></div>
 
-    <main id="outbox-wrap" class="view">
-      <div id="outbox" class="grid"></div>
-      <div id="out-empty" class="empty">
-        <span class="empty-arch" id="out-empty-ico"></span>
-        <h2>Nada esperando al celu</h2>
-        <p>Arrastr&aacute; archivos ac&aacute;, peg&aacute; una imagen con Ctrl+V<br>o us&aacute; <strong>Enviar a <span class="inline-ico" id="chev"></span> Umbral (al celu)</strong> en el Explorador.</p>
-        <p class="empty-hint">En el tel&eacute;fono aparecen en la pesta&ntilde;a <strong>Recibir</strong> de <code id="out-empty-addr" class="selectable"></code></p>
-      </div>
-    </main>
+    <!-- Solo en «Para el celu»: se pliega a lo ancho con `hidden`. -->
+    <div class="ub-bar__group ox-plegable--ancho" id="out-tools" hidden>
+      <button class="ox-iconbtn" id="btn-add" data-tip="Agregar archivos" data-tip-side="bottom"><i data-icon="plus"></i></button>
+      <button class="ox-iconbtn" id="btn-sweep" data-tip="Quitar las ya bajadas" data-tip-side="bottom"><i data-icon="sweep"></i></button>
+    </div>
 
-    <div id="drop-veil" class="drop-veil">
-      <div class="drop-card">
-        <span id="drop-ico"></span>
-        <h2>Solt&aacute; para mandarlo al celu</h2>
-      </div>
+    <div class="ub-size" data-tip="Tamaño de las miniaturas" data-tip-side="bottom">
+      <i data-icon="sizeSm"></i>
+      <input type="range" class="ox-slider" id="thumb-size" min="150" max="420" step="10" aria-label="Tamaño de las miniaturas">
+      <i data-icon="sizeLg"></i>
+    </div>
+
+    <div class="ub-bar__group">
+      <button class="ox-iconbtn" id="btn-folder" data-tip="Abrir la carpeta" data-tip-side="bottom"><i data-icon="folder"></i></button>
+      <button class="ox-iconbtn ub-nuke" id="btn-nuke" data-tip="Purgar todo" data-tip-side="bottom"><i data-icon="nuke"></i></button>
     </div>
   </div>
-  <input id="file-pick" type="file" multiple hidden>
 
-  <div id="qr-pop" class="qr-pop" hidden>
-    <div class="qr-card"><img id="qr-img" alt="QR"></div>
-    <p>Escanealo con el tel&eacute;fono para abrir el uploader.</p>
+  <div class="ox-body">
+    <main class="ox-main" id="view"></main>
   </div>
+</div>
 
-  <div id="ctx" class="ctx" hidden></div>
-  <div id="lightbox" class="lightbox" hidden></div>
-  <div id="modal-root"></div>
-  <div id="toasts"></div>
-  <div id="upd" class="upd" hidden></div>
+<!-- Todos los overlays se portalean acá: fuera del flujo, por encima de todo. -->
+<div id="ox-layer"></div>
+<input id="file-pick" type="file" multiple hidden>
 
-  <script src="js/icons.js"></script>
-  <script src="js/app.js"></script>
-</body>
-</html>
+<script type="module" src="./js/app.js"></script>

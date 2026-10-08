@@ -3,11 +3,13 @@
   "productName": "Umbral",
   "version": "0.2.5",
   "description": "La puerta entre el teléfono y la UCX — capturas del celu a la PC y archivos de la PC al celu, por LAN",
-  "main": "main.js",
+  "main": "main.cjs",
   "author": "Kidd Shady · Umbrovex Systems",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
+    "test": "node test/tokens.test.mjs && node test/store.test.mjs && node test/format.test.mjs",
+    "smoke": "electron test/renderer.test.cjs",
     "icons": "node scripts/build-icons.mjs",
     "dist": "electron-builder --win --publish never",
     "dist:portable": "electron-builder --win portable --publish never",
@@ -31,8 +33,9 @@
       "buildResources": "build"
     },
     "files": [
-      "main.js",
-      "preload.js",
+      "main.cjs",
+      "preload.cjs",
+      "src/**/*",
       "server.js",
       "outbox.js",
       "updater.js",

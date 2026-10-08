@@ -1,695 +1,670 @@
-// Umbral — renderer
-// Dos vistas: Recibidas (teléfono → PC) y Para el celu (PC → teléfono).
-// Entrada animada, FLIP en reflows, ctx menu propio, purga escalonada,
-// QR, arrastrar y soltar, pegado con Ctrl+V, tooltips y toasts.
+/* ═══════════════════════════════════════════════════════════════════════════
+   UMBRAL — renderer
+   Dos vistas: Recibidas (teléfono → PC) y Para el celu (PC → teléfono). Las
+   piezas son de Onyx: el router hace el fundido entre las dos, reconcile()
+   pone la galería al día tarjeta por tarjeta, y menú, modal, toast y tooltip
+   son los overlays del framework. Lo propio de Umbral es el visor, el QR, el
+   velo de arrastrar y la tarjeta de actualización.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-(() => {
-  const $ = (s, r = document) => r.querySelector(s);
-  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+import { Icons } from './icons.js';
+import { Tooltip, Toast, Menu, Modal } from './overlays.js';
+import Router from './router.js';
+import { initClickFlash, initScrollFades, raf2, bindSwitcher, exit, swap, numero, valor, reconcile, stagger, deslizarAlto } from './motion.js';
+import { esc, paint, mark, attempt, colorToken } from './ui.js';
+import { fmtClock, plural, locale } from './format.js';
 
-  // Fuerza reflow antes de agregar la clase: el elemento recién mostrado
-  // (o recién montado) fija su estado base y la transición de entrada corre siempre.
-  const reveal = (el, cls = 'show') => {
-    void el.offsetHeight;
-    el.classList.add(cls);
-  };
+const api = window.umbral;
+const win = window.onyx.win;
+const $ = (id) => document.getElementById(id);
+const layer = () => $('ox-layer');
 
-  const gallery = $('#gallery');
-  const outGrid = $('#outbox');
-  const wrap = $('#gallery-wrap');
-  const outWrap = $('#outbox-wrap');
-  const emptyEl = $('#empty');
-  const outEmptyEl = $('#out-empty');
-  const addrEl = $('#addr');
-  const slider = $('#thumb-size');
-  const ctx = $('#ctx');
-  const qrPop = $('#qr-pop');
-  const lightbox = $('#lightbox');
-  const seg = $('#seg');
-  const outTools = $('#out-tools');
-  const veil = $('#drop-veil');
-  const filePick = $('#file-pick');
+/* ══ Íconos propios ══════════════════════════════════════════════════════════
+   Misma receta que el set base: grilla de 16, contenido entre 1.8 y 14.2,
+   trazo de .ox-icon. El arco tiene que coincidir con el splash del index.html
+   y con la marca de la titlebar. */
+Icons.add({
+  arch: '<path d="M3.67 13.67v-6a4.33 4.33 0 0 1 8.66 0v6"/><path d="M8 7.33v6.34"/>',
+  qr: '<rect x="2.2" y="2.2" width="4.6" height="4.6" rx=".8"/><rect x="9.2" y="2.2" width="4.6" height="4.6" rx=".8"/>'
+    + '<rect x="2.2" y="9.2" width="4.6" height="4.6" rx=".8"/><path d="M9.4 9.4h1.8v1.8H9.4z"/>'
+    + '<path d="M13.6 9.4v.01M9.4 13.6h.01M11.9 11.9h.01M13.6 13.6v.01"/>',
+  phoneDown: '<rect x="4.4" y="1.8" width="7.2" height="12.4" rx="1.7"/><path d="M8 5v4.6"/><path d="M6 7.7l2 2 2-2"/>',
+  sweep: '<circle cx="8" cy="8" r="5.8"/><path d="M5.5 8.1l1.7 1.7 3.3-3.6"/>',
+  exportar: '<path d="M8 2v7.2"/><path d="M5 5l3-3 3 3"/><path d="M3.3 8.7v3.9a1.4 1.4 0 0 0 1.4 1.4h6.6a1.4 1.4 0 0 0 1.4-1.4V8.7"/>',
+  quitar: '<circle cx="8" cy="8" r="6"/><path d="M5.3 8h5.4"/>',
+  sizeSm: '<rect x="5" y="5" width="6" height="6" rx="1.2"/>',
+  sizeLg: '<rect x="2.5" y="2.5" width="11" height="11" rx="2"/>',
+  // Radiación: el botón nuclear. Este va relleno, como los puntos macizos.
+  nuke: ['', ' transform="rotate(120 8 8)"', ' transform="rotate(240 8 8)"']
+    .map((t) => `<path fill="currentColor" stroke="none"${t} d="M6.6 5.57 5 2.81a6 6 0 0 1 6 0L9.4 5.57a2.8 2.8 0 0 0-2.8 0z"/>`).join('')
+    + '<circle cx="8" cy="8" r="1.4" fill="currentColor" stroke="none"/>',
+});
 
-  let images = [];   // recibidas: { name, url, size, mtime } — más nueva primero
-  let outItems = []; // para el celu: { name, url, size, mtime, image, delivered }
-  let view = 'in';
+/* ══ Datos ═══════════════════════════════════════════════════════════════════
+   Un espejo en memoria: las vistas se dibujan desde acá y nunca piden datos
+   para pintarse. El proceso principal avisa lo que llega y lo que se baja. */
 
-  // ------------------------------------------------------------ íconos UI
+const S = {
+  images: [],   // recibidas: { name, url, size, mtime } — la más nueva primero
+  out: [],      // para el celu: { name, url, size, mtime, image, delivered }
+  url: '',
+  qr: '',
+  booting: true,
+};
 
-  $('#tb-logo').innerHTML = icon('arch', 16);
-  $('#win-min').innerHTML = icon('minus', 13, 1.6);
-  $('#win-max').innerHTML = icon('square', 12, 1.6);
-  $('#win-close').innerHTML = icon('x', 13, 1.6);
-  $('#btn-qr').innerHTML = icon('qr', 16);
-  $('#btn-folder').innerHTML = icon('folder', 16);
-  $('#btn-nuke').innerHTML = nukeIcon(16);
-  $('#btn-add').innerHTML = icon('plus', 16);
-  $('#btn-sweep').innerHTML = icon('sweep', 16);
-  $('#size-sm').innerHTML = icon('square', 9, 3.2);
-  $('#size-lg').innerHTML = icon('square', 14, 2);
-  $('#empty-arch').innerHTML = icon('arch', 92, 1.1);
-  $('#out-empty-ico').innerHTML = icon('phoneDown', 84, 1.1);
-  $('#drop-ico').innerHTML = icon('phoneDown', 44, 1.4);
-  $('#chev').innerHTML = icon('chevron', 12, 2.4);
+const fmtWhen = (ms) => `${fmtClock(ms)} · ${new Date(ms).toLocaleDateString(locale.tag, { day: '2-digit', month: '2-digit' })}`;
+const extOf = (n) => (n.includes('.') ? n.split('.').pop().slice(0, 5).toUpperCase() : 'ARCHIVO');
 
-  // ------------------------------------------------------------ esc stack
+/* ══ Acciones ════════════════════════════════════════════════════════════════ */
 
-  const escStack = [];
-  const pushEsc = (fn) => escStack.push(fn);
-  const dropEsc = (fn) => {
-    const i = escStack.indexOf(fn);
-    if (i !== -1) escStack.splice(i, 1);
-  };
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') escStack[escStack.length - 1]?.();
+async function copiar(fn) {
+  const res = await attempt(fn, { errorTitle: 'No se pudo copiar' });
+  if (!res) return;
+  if (res.ok) Toast.show({ title: 'Copiada al portapapeles', icon: 'copy', duration: 2600 });
+  else Toast.error('No se pudo copiar', 'El archivo no es una imagen que el portapapeles entienda.');
+}
+
+async function exportar(fn, femenino = true) {
+  const res = await attempt(fn, { errorTitle: 'No se pudo exportar' });
+  if (!res || res.canceled) return;
+  if (res.ok) Toast.show({ title: femenino ? 'Exportada' : 'Exportado', text: res.name, icon: 'exportar', duration: 3200 });
+  else Toast.error('No se pudo exportar', 'No se pudo escribir la copia en esa carpeta.');
+}
+
+function removeImage(name) {
+  S.images = S.images.filter((i) => i.name !== name);
+  api.deleteImage(name);
+  sync('recibidas');
+}
+
+function removeOut(name) {
+  S.out = S.out.filter((i) => i.name !== name);
+  api.outbox.remove(name);
+  sync('celu');
+}
+
+function addImage(img) {
+  if (S.images.some((i) => i.name === img.name)) return;
+  S.images.unshift(img);
+  sync('recibidas');
+}
+
+function addOut(items, { focus = false } = {}) {
+  let n = 0;
+  for (const item of items) {
+    if (S.out.some((i) => i.name === item.name)) continue;
+    S.out.unshift(item);
+    n++;
+  }
+  if (!n) return;
+  if (focus || Router.name !== 'celu') go('celu');
+  sync('celu');
+  Toast.show({ title: `${plural(n, 'archivo esperando', 'archivos esperando')} al celu`, icon: 'phoneDown', duration: 3200 });
+}
+
+async function addFiles(files) {
+  if (!files.length) return;
+  const added = await attempt(() => api.outbox.addFiles(files), { errorTitle: 'No se pudieron agregar' });
+  if (!added) return;
+  if (!added.length) Toast.error('No se agregó nada', 'Solo se pueden mandar archivos, no carpetas.');
+  addOut(added, { focus: true });
+}
+
+/* ══ Menús ═══════════════════════════════════════════════════════════════════
+   El mismo menú sirve para la miniatura y para la foto agrandada. Se abre en
+   el cursor: el ancla es un punto invisible ahí. */
+
+function menuAt(x, y, items) {
+  let p = $('ub-anchor');
+  if (!p) {
+    p = document.createElement('div');
+    p.id = 'ub-anchor';
+    p.className = 'ub-anchor';
+    document.body.appendChild(p);
+  }
+  // El ancla es siempre la misma: pedirlo otra vez es abrirlo en el punto nuevo, no cerrarlo.
+  Menu.close(true);
+  p.style.left = `${Math.round(x)}px`;
+  p.style.top = `${Math.round(y) - 6}px`;   // Menu.show lo baja 6 px: que nazca en el cursor
+  return Menu.show(p, items);
+}
+
+function menuIn(img) {
+  return [
+    { label: 'Copiar', icon: 'copy', onSelect: () => copiar(() => api.copyImage(img.name)) },
+    { label: 'Exportar', icon: 'exportar', onSelect: () => exportar(() => api.exportImage(img.name)) },
+    { sep: true },
+    { label: 'Eliminar', icon: 'trash', danger: true, onSelect: () => { closeLightbox(); removeImage(img.name); } },
+  ];
+}
+
+function menuOut(item) {
+  return [
+    ...(item.image ? [{ label: 'Copiar', icon: 'copy', onSelect: () => copiar(() => api.outbox.copy(item.name)) }] : []),
+    { label: 'Exportar', icon: 'exportar', onSelect: () => exportar(() => api.outbox.export(item.name), item.image) },
+    { sep: true },
+    { label: 'Quitar de la bandeja', icon: 'quitar', danger: true, onSelect: () => { closeLightbox(); removeOut(item.name); } },
+  ];
+}
+
+/* ══ Visor ═══════════════════════════════════════════════════════════════════ */
+
+let lightbox = null;
+
+function openLightbox(url, items) {
+  closeLightbox();
+  const el = document.createElement('div');
+  el.className = 'ub-lightbox';
+  el.innerHTML = `<img src="${esc(url)}" alt="">`;
+  el.__vuelve = document.activeElement;
+  layer().appendChild(el);
+  lightbox = el;
+
+  // Si el click afuera solo vino a cerrar un menú, no cierra también el visor.
+  let menuAbierto = false;
+  el.addEventListener('pointerdown', () => { menuAbierto = Menu.isOpen; });
+  el.addEventListener('click', () => { if (!menuAbierto) closeLightbox(); });
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    menuAt(e.clientX, e.clientY, items());
   });
+}
 
-  // ------------------------------------------------------------ helpers
+function closeLightbox() {
+  if (!lightbox) return;
+  const el = lightbox;
+  lightbox = null;
+  if (el.__vuelve?.isConnected) el.__vuelve.focus({ preventScroll: true });
+  exit(el, { fallback: 260 });
+}
 
-  const fmtTime = (ms) => {
-    const d = new Date(ms);
-    const p = (n) => String(n).padStart(2, '0');
-    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} · ${p(d.getDate())}/${p(d.getMonth() + 1)}`;
+/* ══ Las vistas ══════════════════════════════════════════════════════════════
+   Cada una pinta su scroll con la grilla, o el vacío. La grilla se llena con
+   reconcile(): las tarjetas tienen clave (el nombre del archivo), así que lo
+   que llega en vivo entra, lo que se borra se esfuma desde donde estaba, y el
+   resto se corre a su lugar nuevo. */
+
+function cardIn(img) {
+  return `<figure class="ub-card" tabindex="0">
+    <img src="${esc(img.url)}" alt="" loading="lazy" draggable="false">
+    <figcaption class="ub-card__time">${esc(fmtWhen(img.mtime))}</figcaption>
+  </figure>`;
+}
+
+const pillHTML = (item) => (item.delivered
+  ? `${Icons.svg('check')}<span>Bajada</span>`
+  : `${mark('running')}<span>Esperando</span>`);
+
+function cardOut(item) {
+  const cls = `ub-card${item.image ? '' : ' ub-card--file'}${item.delivered ? ' is-delivered' : ''}`;
+  const body = item.image
+    ? `<img src="${esc(item.url)}" alt="" loading="lazy" draggable="false">`
+    : `<div class="ub-file">${Icons.svg('file')}
+        <span class="ub-file__ext">${esc(extOf(item.name))}</span>
+        <span class="ub-file__name ox-truncate ox-copyable">${esc(item.name)}</span>
+      </div>`;
+  return `<figure class="${cls}" tabindex="0">
+    ${body}
+    <span class="ub-pill" data-delivered="${item.delivered ? 1 : 0}">${pillHTML(item)}</span>
+    <figcaption class="ub-card__time">${esc(fmtWhen(item.mtime))}</figcaption>
+  </figure>`;
+}
+
+/* Una tarjeta de «Para el celu» que pasó a bajada: la clase corre con su
+   transición (el filtro que la apaga) y la píldora hace un relevo. */
+function updateOut(el, { it }) {
+  el.classList.toggle('is-delivered', !!it.delivered);
+  const pill = el.querySelector(':scope > .ub-pill');
+  const d = it.delivered ? '1' : '0';
+  if (pill && pill.dataset.delivered !== d) {
+    pill.dataset.delivered = d;
+    swap(pill, pillHTML(it), { relevo: true });
+  }
+}
+
+const VIEWS = {
+  recibidas: {
+    list: () => S.images,
+    card: cardIn,
+    menu: menuIn,
+    empty: () => `
+      <div class="ox-empty ub-empty">${Icons.svg('arch')}
+        <div class="ox-empty__title">El umbral está despejado</div>
+        <div class="ox-empty__text">Compartí una captura desde el teléfono y aparece acá.</div>
+        ${S.url ? `<span class="ub-empty__addr ox-copyable">${esc(S.url)}</span>` : ''}
+      </div>`,
+  },
+  celu: {
+    list: () => S.out,
+    card: cardOut,
+    menu: menuOut,
+    update: updateOut,
+    empty: () => `
+      <div class="ox-empty ub-empty">${Icons.svg('phoneDown')}
+        <div class="ox-empty__title">Nada esperando al celu</div>
+        <div class="ox-empty__text">Arrastrá archivos acá, pegá una imagen con Ctrl+V o usá
+          <strong>Enviar a <span class="ub-empty__inline">${Icons.svg('chevronRight')}</span> Umbral (al celu)</strong>
+          en el Explorador. En el teléfono aparecen en la pestaña <strong>Recibir</strong> de:</div>
+        ${S.url ? `<span class="ub-empty__addr ox-copyable">${esc(S.url)}</span>` : ''}
+      </div>`,
+  },
+};
+
+const items = (v) => VIEWS[v].list().map((it) => ({ key: it.name, html: VIEWS[v].card(it), it }));
+
+function view(v) {
+  const list = VIEWS[v].list();
+  paint(list.length
+    ? `<div class="ox-scroll ox-grow"><div class="ub-grid" id="grid"></div></div>`
+    : `<div class="ox-grow" style="display:grid;place-items:center">${VIEWS[v].empty()}</div>`);
+  const grid = $('grid');
+  if (!grid) return;
+  reconcile(grid, items(v), { enter: false, update: VIEWS[v].update, created: (el) => Icons.mount(el) });
+  // Solo al arrancar las tarjetas entran escalonadas; al cambiar de vista,
+  // la nueva ya está entera y quieta debajo del fundido.
+  if (S.booting) { stagger(grid); grid.classList.add('ub-grid--entra'); }
+  wireGrid(grid, v);
+}
+
+/* La delegación va en la grilla, que muere con el pintado: en #view se
+   acumularía un escuchador por visita. */
+function wireGrid(grid, v) {
+  const itemOf = (card) => card && VIEWS[v].list().find((i) => i.name === card.dataset.key);
+  const open = (card) => {
+    const it = itemOf(card);
+    if (!it || (v === 'celu' && !it.image)) return;
+    openLightbox(it.url, () => VIEWS[v].menu(it));
   };
-  const extOf = (n) => (n.includes('.') ? n.split('.').pop().slice(0, 5).toUpperCase() : 'ARCHIVO');
-  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-
-  // FLIP: anima el reacomodo de las cards cuando algo entra o se va.
-  function flip(grid, mutate) {
-    const before = new Map([...grid.children].map((c) => [c, c.getBoundingClientRect()]));
-    mutate();
-    requestAnimationFrame(() => {
-      for (const c of grid.children) {
-        const f = before.get(c);
-        if (!f) continue;
-        const l = c.getBoundingClientRect();
-        const dx = f.left - l.left;
-        const dy = f.top - l.top;
-        if (!dx && !dy) continue;
-        c.animate(
-          [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }],
-          { duration: 260, easing: 'cubic-bezier(.22,1,.36,1)' }
-        );
-      }
-    });
-  }
-
-  function enter(grid, card) {
-    card.classList.add('entering');
-    flip(grid, () => grid.prepend(card));
-    requestAnimationFrame(() => requestAnimationFrame(() => card.classList.remove('entering')));
-  }
-
-  async function leave(grid, card) {
+  grid.addEventListener('click', (e) => open(e.target.closest('.ub-card')));
+  grid.addEventListener('contextmenu', (e) => {
+    const it = itemOf(e.target.closest('.ub-card'));
+    if (!it) return;
+    e.preventDefault();
+    menuAt(e.clientX, e.clientY, VIEWS[v].menu(it));
+  });
+  grid.addEventListener('keydown', (e) => {
+    const card = e.target.closest('.ub-card');
     if (!card) return;
-    card.classList.add('leaving');
-    await wait(200);
-    flip(grid, () => card.remove());
-  }
+    if (e.key === 'Enter') { e.preventDefault(); open(card); }
+    else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      e.preventDefault();
+      const r = card.getBoundingClientRect();
+      menuAt(r.left + r.width / 2, r.top + r.height / 2, VIEWS[v].menu(itemOf(card)));
+    }
+  });
+}
 
-  // entrada inicial escalonada
-  function mountStaggered(grid, cards) {
-    cards.forEach((card, i) => {
-      card.classList.add('entering');
-      card.style.transitionDelay = Math.min(i * 24, 500) + 'ms';
-      grid.append(card);
-    });
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        for (const c of cards) {
-          c.classList.remove('entering');
-          c.addEventListener('transitionend', () => { c.style.transitionDelay = ''; }, { once: true });
-        }
-      })
-    );
-  }
+/* Lo que cambió en una vista: si es la que se ve, se pone al día en el lugar;
+   si pasa de vacía a llena (o al revés), se repinta con fundido. La otra se
+   pinta con lo último la próxima vez que se entre. */
+function sync(v) {
+  updateChrome();
+  if (Router.name !== v) return;
+  const grid = $('grid');
+  const llena = VIEWS[v].list().length > 0;
+  if (!!grid !== llena) return Router.refresh();
+  if (grid) reconcile(grid, items(v), { update: VIEWS[v].update, created: (el) => Icons.mount(el) });
+}
 
-  async function purgeCards(grid) {
-    const cards = [...grid.children];
-    cards.forEach((c, i) => setTimeout(() => c.classList.add('leaving'), i * 22));
-    await wait(cards.length * 22 + 240);
-    grid.innerHTML = '';
-  }
+function go(v) {
+  if (Router.name === v) return;
+  closeLightbox();
+  Router.go(v);
+}
 
-  const cardOf = (grid, name) => grid.querySelector(`[data-name="${CSS.escape(name)}"]`);
+/* ══ El chrome ═══════════════════════════════════════════════════════════════ */
 
-  // ------------------------------------------------------------ vistas
+let syncSeg = () => {};
 
-  function placeSegInd() {
-    const btn = seg.querySelector('.seg-btn.on');
-    const ind = seg.querySelector('.seg-ind');
-    ind.style.width = btn.offsetWidth + 'px';
-    ind.style.transform = `translateX(${btn.offsetLeft}px)`;
-  }
+function updateChrome() {
+  const v = Router.name;
+  numero($('n-in'), S.images.length);
+  numero($('n-out'), S.out.length);
+  $('n-out').classList.toggle('is-hot', S.out.some((i) => !i.delivered));
 
-  function setView(v) {
-    if (v === view) return;
-    view = v;
-    seg.dataset.on = v;
-    for (const b of seg.querySelectorAll('.seg-btn')) b.classList.toggle('on', b.dataset.view === v);
-    placeSegInd();
-    wrap.classList.toggle('active', v === 'in');
-    outWrap.classList.toggle('active', v === 'out');
-    outTools.classList.toggle('show', v === 'out');
-    $('#btn-nuke').dataset.tip = v === 'in' ? 'Purgar todo' : 'Vaciar la bandeja';
-  }
+  const sweep = $('btn-sweep');
+  sweep.disabled = !S.out.some((i) => i.delivered);
+  sweep.dataset.tip = sweep.disabled ? 'Quitar las ya bajadas: ninguna bajó todavía' : 'Quitar las ya bajadas';
 
-  seg.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-view]');
-    if (b) setView(b.dataset.view);
+  const nuke = $('btn-nuke');
+  const vacia = v === 'celu' ? !S.out.length : !S.images.length;
+  nuke.disabled = vacia;
+  nuke.dataset.tip = v === 'celu'
+    ? (vacia ? 'La bandeja ya está vacía' : 'Vaciar la bandeja')
+    : (vacia ? 'No hay nada que purgar' : 'Purgar todo');
+
+  $('btn-folder').dataset.tip = v === 'celu' ? 'Abrir la carpeta de la bandeja' : 'Abrir la carpeta de las capturas';
+  $('out-tools').hidden = v !== 'celu';
+
+  // El segmentado sigue a la vista también cuando cambia sola (arrastrar, Enviar a).
+  for (const o of $('seg').querySelectorAll('.ox-segmented__opt')) o.classList.toggle('is-active', o.dataset.value === v);
+  syncSeg();
+}
+
+function wireChrome() {
+  $('win-min').addEventListener('click', () => win.minimize());
+  $('win-close').addEventListener('click', () => win.close());
+  const maxBtn = $('win-max');
+  maxBtn.addEventListener('click', () => win.toggleMaximize());
+  win.onMaximized((isMax) => {
+    maxBtn.innerHTML = Icons.svg(isMax ? 'winRestore' : 'winMax');
+    maxBtn.setAttribute('aria-label', isMax ? 'Restaurar' : 'Maximizar');
   });
 
-  // ------------------------------------------------------------ recibidas
+  syncSeg = bindSwitcher($('seg'), (v) => go(v));
 
-  function makeCard(img) {
-    const fig = document.createElement('figure');
-    fig.className = 'card';
-    fig.dataset.name = img.name;
-    fig.innerHTML = `
-      <img src="${img.url}" alt="" loading="lazy">
-      <figcaption class="card-time">${fmtTime(img.mtime)}</figcaption>`;
-    // El mismo menú sirve para la miniatura y para la foto agrandada
-    const menu = (x, y) => openCtx(x, y, [
-      { act: 'copy', ico: 'copy', label: 'Copiar' },
-      { act: 'export', ico: 'export', label: 'Exportar' },
-      { act: 'del', ico: 'trash', label: 'Eliminar', danger: true },
-    ], async (act) => {
-      if (act === 'copy') {
-        const res = await window.umbral.copyImage(img.name);
-        toast(res.ok ? 'Copiada al portapapeles' : 'No se pudo copiar', { ok: res.ok });
-      } else if (act === 'export') {
-        const res = await window.umbral.exportImage(img.name);
-        if (!res.canceled) toast(res.ok ? `Exportada: ${res.name}` : 'No se pudo exportar', { ok: res.ok });
-      } else {
-        closeLightbox();
-        removeImage(img.name);
-      }
-    });
-    fig.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      menu(e.clientX, e.clientY);
-    });
-    fig.addEventListener('click', () => openLightbox(img.url, menu));
-    return fig;
-  }
-
-  function updateMeta() {
-    const n = images.length;
-    $('#n-in').textContent = n;
-    emptyEl.classList.toggle('show', n === 0);
-
-    const pending = outItems.filter((i) => !i.delivered).length;
-    const nOut = $('#n-out');
-    nOut.textContent = outItems.length;
-    nOut.classList.toggle('hot', pending > 0);
-    outEmptyEl.classList.toggle('show', outItems.length === 0);
-    $('#btn-sweep').disabled = !outItems.some((i) => i.delivered);
-    placeSegInd();
-  }
-
-  function addImage(img) {
-    if (images.some((i) => i.name === img.name)) return;
-    images.unshift(img);
-    enter(gallery, makeCard(img));
-    updateMeta();
-  }
-
-  async function removeImage(name) {
-    images = images.filter((i) => i.name !== name);
-    window.umbral.deleteImage(name);
-    updateMeta();
-    await leave(gallery, cardOf(gallery, name));
-  }
-
-  // ------------------------------------------------------------ para el celu
-
-  function paintPill(card, item) {
-    card.classList.toggle('delivered', !!item.delivered);
-    card.querySelector('.pill').innerHTML = item.delivered
-      ? `${icon('check', 11, 3)}<span>Bajada</span>`
-      : '<span class="dot"></span><span>Esperando</span>';
-  }
-
-  function makeOutCard(item) {
-    const fig = document.createElement('figure');
-    fig.className = 'card out-card' + (item.image ? '' : ' file');
-    fig.dataset.name = item.name;
-    const menu = (x, y) => openCtx(x, y, [
-      ...(item.image ? [{ act: 'copy', ico: 'copy', label: 'Copiar' }] : []),
-      { act: 'export', ico: 'export', label: 'Exportar' },
-      { act: 'rm', ico: 'remove', label: 'Quitar de la bandeja', danger: true },
-    ], async (act) => {
-      if (act === 'copy') {
-        const res = await window.umbral.outbox.copy(item.name);
-        toast(res.ok ? 'Copiada al portapapeles' : 'No se pudo copiar', { ok: res.ok });
-      } else if (act === 'export') {
-        const res = await window.umbral.outbox.export(item.name);
-        if (!res.canceled) toast(res.ok ? `${item.image ? 'Exportada' : 'Exportado'}: ${res.name}` : 'No se pudo exportar', { ok: res.ok });
-      } else {
-        closeLightbox();
-        removeOut(item.name);
-      }
-    });
-    if (item.image) {
-      fig.innerHTML = `<img class="card-img" src="${item.url}" alt="" loading="lazy">`;
-      fig.addEventListener('click', () => openLightbox(item.url, menu));
-    } else {
-      fig.innerHTML = `<div class="file-tile">${icon('file', 34, 1.4)}<b></b><span class="file-name selectable"></span></div>`;
-      fig.querySelector('b').textContent = extOf(item.name);
-      fig.querySelector('.file-name').textContent = item.name;
-    }
-    fig.insertAdjacentHTML('beforeend', `<span class="pill"></span><figcaption class="card-time">${fmtTime(item.mtime)}</figcaption>`);
-    paintPill(fig, item);
-    fig.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      menu(e.clientX, e.clientY);
-    });
-    return fig;
-  }
-
-  function addOut(items, { focus = false } = {}) {
-    let n = 0;
-    for (const item of items) {
-      if (outItems.some((i) => i.name === item.name)) continue;
-      outItems.unshift(item);
-      enter(outGrid, makeOutCard(item));
-      n++;
-    }
-    updateMeta();
-    if (n && (focus || view !== 'out')) setView('out');
-    if (n) toast(`${plural(n, 'archivo esperando', 'archivos esperando')} al celu`);
-  }
-
-  async function removeOut(name) {
-    outItems = outItems.filter((i) => i.name !== name);
-    window.umbral.outbox.remove(name);
-    updateMeta();
-    await leave(outGrid, cardOf(outGrid, name));
-  }
-
-  window.umbral.outbox.onAdded((items, opts) => addOut(items, opts));
-
-  window.umbral.outbox.onDelivered((item) => {
-    const cur = outItems.find((i) => i.name === item.name);
-    if (!cur) return;
-    const first = !cur.delivered;
-    cur.delivered = item.delivered;
-    const card = cardOf(outGrid, item.name);
-    if (card) paintPill(card, cur);
-    updateMeta();
-    if (first) toast(`Bajada en el celu: ${item.name}`, item.image ? { img: item.url } : {});
-  });
-
-  // agregar: botón, arrastrar y soltar, Ctrl+V
-
-  async function addFiles(files) {
-    if (!files.length) return;
-    const added = await window.umbral.outbox.addFiles(files);
-    if (!added.length) toast('Solo se pueden mandar archivos, no carpetas', { ok: false });
-    addOut(added, { focus: true });
-  }
-
-  $('#btn-add').addEventListener('click', () => filePick.click());
-  filePick.addEventListener('change', () => {
-    const files = [...filePick.files];
-    filePick.value = '';
+  $('btn-qr').addEventListener('click', toggleQr);
+  $('btn-folder').addEventListener('click', () => api.openInbox(Router.name === 'celu' ? 'outbox' : 'inbox'));
+  $('btn-nuke').addEventListener('click', purgar);
+  $('btn-add').addEventListener('click', () => $('file-pick').click());
+  $('file-pick').addEventListener('change', (e) => {
+    const files = [...e.target.files];
+    e.target.value = '';
     addFiles(files);
   });
+  $('btn-sweep').addEventListener('click', () => {
+    const done = S.out.filter((i) => i.delivered);
+    if (!done.length) return;
+    S.out = S.out.filter((i) => !i.delivered);
+    for (const item of done) api.outbox.remove(item.name);
+    sync('celu');
+    Toast.show({ title: plural(done.length, 'archivo quitado', 'archivos quitados'), icon: 'sweep', duration: 2600 });
+  });
 
-  let dragDepth = 0;
-  const isFileDrag = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+  document.addEventListener('keydown', onKey);
+  wireDrop();
+}
+
+function onKey(e) {
+  if (Modal.isOpen || Menu.isOpen) return;   // el Escape y el Enter son de ellos
+  if (e.key === 'Escape') {
+    if (qr) closeQr();
+    else if (lightbox) closeLightbox();
+    return;
+  }
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'v') {
+    if (e.target.closest?.('input, textarea, [contenteditable]')) return;
+    pegar();
+  }
+}
+
+async function pegar() {
+  const res = await attempt(() => api.outbox.paste(), { errorTitle: 'No se pudo pegar' });
+  if (!res) return;
+  if (res.ok) addOut(res.items, { focus: true });
+  else Toast.error('No hay nada que pegar', 'El portapapeles no tiene una imagen ni archivos.');
+}
+
+/* ── Tamaño de las miniaturas ───────────────────────────────────────────── */
+
+function wireSize(px) {
+  const s = $('thumb-size');
+  const put = (v) => {
+    document.documentElement.style.setProperty('--ub-thumb', `${v}px`);
+    s.style.setProperty('--ox-pct', `${((v - s.min) / (s.max - s.min)) * 100}%`);
+  };
+  s.value = px;
+  put(Number(s.value));
+  let t = 0;
+  s.addEventListener('input', () => {
+    put(Number(s.value));
+    clearTimeout(t);
+    t = setTimeout(() => window.onyx.settings.save({ miniatura: Number(s.value) }).catch(() => {}), 300);
+  });
+}
+
+/* ── QR ─────────────────────────────────────────────────────────────────── */
+
+let qr = null;
+
+function toggleQr() {
+  if (qr) return closeQr();
+  const btn = $('btn-qr');
+  const el = document.createElement('div');
+  el.className = 'ub-qr';
+  el.innerHTML = `
+    <div class="ub-qr__code">${S.qr ? `<img src="${esc(S.qr)}" alt="QR de ${esc(S.url)}">` : ''}</div>
+    <div class="ub-qr__text">Escanealo con el teléfono para abrir Umbral en su navegador.</div>`;
+  layer().appendChild(el);
+  const a = btn.getBoundingClientRect();
+  const left = Math.min(Math.max(10, a.left - 8), window.innerWidth - el.offsetWidth - 10);
+  el.style.left = `${Math.round(left)}px`;
+  el.style.top = `${Math.round(a.bottom + 6)}px`;
+  btn.classList.add('is-open');
+  qr = el;
+
+  // Afuera lo cierra; el botón no, que es su toggle.
+  el.__afuera = (ev) => { if (!el.contains(ev.target) && !btn.contains(ev.target)) closeQr(); };
+  setTimeout(() => document.addEventListener('pointerdown', el.__afuera), 0);
+}
+
+function closeQr() {
+  if (!qr) return;
+  const el = qr;
+  qr = null;
+  document.removeEventListener('pointerdown', el.__afuera);
+  $('btn-qr').classList.remove('is-open');
+  exit(el, { fallback: 200 });
+}
+
+/* ── Purga ──────────────────────────────────────────────────────────────── */
+
+async function purgar() {
+  const celu = Router.name === 'celu';
+  const n = celu ? S.out.length : S.images.length;
+  if (!n) return;
+  const okay = await Modal.confirm(celu
+    ? { title: 'Vaciar la bandeja', sub: `Se van a quitar ${plural(n, 'archivo', 'archivos')} y el celu deja de verlos. Los originales en tu PC no se tocan.`, confirmLabel: 'Vaciar', danger: true }
+    : { title: 'Purga total', sub: `Se van a eliminar ${plural(n, 'captura', 'capturas')}. No hay vuelta atrás.`, confirmLabel: 'Purgar', danger: true });
+  if (!okay) return;
+  if (celu) {
+    S.out = [];
+    await attempt(() => api.outbox.clear(), { errorTitle: 'No se pudo vaciar' });
+    Toast.show({ title: 'Bandeja vacía', icon: 'check', duration: 2600 });
+  } else {
+    S.images = [];
+    await attempt(() => api.clearAll(), { errorTitle: 'No se pudo purgar' });
+    Toast.show({ title: 'Umbral despejado', icon: 'check', duration: 2600 });
+  }
+  // Las tarjetas se esfuman y recién ahí entra el vacío.
+  const grid = $('grid');
+  if (grid) {
+    reconcile(grid, []);
+    updateChrome();
+    setTimeout(() => { if (!VIEWS[Router.name].list().length) Router.refresh(); }, 260);
+  } else sync(celu ? 'celu' : 'recibidas');
+}
+
+/* ── Arrastrar y soltar ─────────────────────────────────────────────────── */
+
+function wireDrop() {
+  let depth = 0;
+  let veil = null;
+  const isFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+  const show = () => {
+    if (veil) return;
+    veil = document.createElement('div');
+    veil.className = 'ub-veil';
+    veil.innerHTML = `<div class="ub-veil__card">${Icons.svg('phoneDown')}<div class="ub-veil__title">Soltá para mandarlo al celu</div></div>`;
+    layer().appendChild(veil);
+  };
+  const hide = () => { if (veil) { exit(veil, { fallback: 220 }); veil = null; } };
+
   document.addEventListener('dragenter', (e) => {
-    if (!isFileDrag(e)) return;
+    if (!isFiles(e)) return;
     e.preventDefault();
-    if (dragDepth++ === 0) {
-      setView('out');
-      veil.classList.add('show');
-    }
+    if (depth++ === 0) { go('celu'); show(); }
   });
   document.addEventListener('dragover', (e) => {
-    if (!isFileDrag(e)) return;
+    if (!isFiles(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
   });
   document.addEventListener('dragleave', (e) => {
-    if (!isFileDrag(e)) return;
-    if (--dragDepth <= 0) { dragDepth = 0; veil.classList.remove('show'); }
+    if (!isFiles(e)) return;
+    if (--depth <= 0) { depth = 0; hide(); }
   });
   document.addEventListener('drop', (e) => {
-    e.preventDefault(); // sin esto Electron navega al archivo soltado
-    dragDepth = 0;
-    veil.classList.remove('show');
-    if (isFileDrag(e)) addFiles([...e.dataTransfer.files]);
+    e.preventDefault();   // sin esto Electron navega al archivo soltado
+    depth = 0;
+    hide();
+    if (isFiles(e)) addFiles([...e.dataTransfer.files]);
   });
+}
 
-  document.addEventListener('keydown', async (e) => {
-    if (!(e.ctrlKey && e.key.toLowerCase() === 'v')) return;
-    if (e.target.closest?.('input[type="text"], textarea, [contenteditable]')) return;
-    const res = await window.umbral.outbox.paste();
-    if (res.ok) addOut(res.items, { focus: true });
-    else toast('El portapapeles no tiene una imagen ni archivos', { ok: false });
-  });
+/* ══ Actualización ═══════════════════════════════════════════════════════════
+   Una tarjeta abajo a la izquierda (los toasts van a la derecha). Aparece sola
+   solo si hay algo que hacer; «al día» y los errores, solo si lo pediste. */
 
-  $('#btn-sweep').addEventListener('click', async () => {
-    const done = outItems.filter((i) => i.delivered);
-    if (!done.length) return;
-    for (const item of done) removeOut(item.name);
-    toast(`${plural(done.length, 'archivo quitado', 'archivos quitados')}`);
-  });
+let upd = null;
+let updKey = '';
+let updDismissed = '';
+let updTimer = 0;
 
-  // ------------------------------------------------------------ ctx menu
+const mb = (b) => (b ? ` · ${Math.round(b / 1048576)} MB` : '');   // que el número no quede solo en un renglón
+const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 
-  let ctxHideTimer = 0;
-
-  function openCtx(x, y, items, onPick) {
-    closeCtx();
-    clearTimeout(ctxHideTimer); // si no, el cierre de recién esconde este menú
-    ctx.innerHTML = items.map((it) =>
-      `<button class="ctx-item${it.danger ? ' ctx-danger' : ''}" data-act="${it.act}">${icon(it.ico, 15)}<span>${it.label}</span></button>`
-    ).join('');
-    ctx.hidden = false;
-    const r = ctx.getBoundingClientRect();
-    const px = Math.min(x, innerWidth - r.width - 8);
-    const py = Math.min(y, innerHeight - r.height - 8);
-    ctx.style.left = px + 'px';
-    ctx.style.top = py + 'px';
-    ctx.style.transformOrigin = `${x > px ? 'right' : 'left'} ${y > py ? 'bottom' : 'top'}`;
-    reveal(ctx);
-
-    ctx.onclick = (e) => {
-      const act = e.target.closest('[data-act]')?.dataset.act;
-      if (!act) return;
-      closeCtx();
-      onPick(act);
-    };
-    pushEsc(closeCtx);
+function updView(s) {
+  switch (s.phase) {
+    // El título del release es «Umbral X — qué trae»: arriba la versión, abajo el qué.
+    case 'available': return { ico: 'download', title: `Umbral ${s.version} disponible`,
+      sub: `${cap((s.name || '').split(/\s+[—-]\s+/).slice(1).join(' — ')) || `Tenés la ${s.current}`}${mb(s.bytes)}`,
+      acts: [['open', 'Ver novedades', 'ox-btn--secondary'], ['download', 'Descargar', 'ox-btn--primary']] };
+    case 'downloading': return { ico: 'download', title: `Descargando la ${s.version}`, sub: `${Math.round(s.pct * 100)} %`, bar: s.pct, sticky: true };
+    case 'ready': return { ico: 'check', title: `La ${s.version} está lista`, sub: 'Si no reiniciás ahora, se instala cuando salgas de Umbral.',
+      acts: [['install', 'Reiniciar', 'ox-btn--primary']] };
+    case 'checking': return s.manual && { ico: 'spin', title: 'Buscando actualizaciones', sub: 'Consultando GitHub' };
+    case 'current': return s.manual && { ico: 'check', title: 'Estás al día', sub: `Umbral ${s.current}`, auto: 3200 };
+    case 'error': return s.manual && { ico: 'alert', bad: true, title: 'No se pudo buscar', sub: s.error };
+    case 'unsupported': return s.manual && { ico: 'alert', bad: true, title: 'Sin actualización automática', sub: s.reason };
+    default: return null;
   }
+}
 
-  function closeCtx() {
-    if (ctx.hidden) return;
-    dropEsc(closeCtx);
-    ctx.classList.remove('show');
-    ctxHideTimer = setTimeout(() => { ctx.hidden = true; }, 160);
-  }
-
-  // Si el click afuera solo vino a cerrar el menú, no tiene que cerrar
-  // también el visor que está debajo
-  let ctxDismissed = false;
-  document.addEventListener('mousedown', (e) => {
-    ctxDismissed = !ctx.hidden && ctx.classList.contains('show') && !ctx.contains(e.target);
-    if (ctxDismissed) closeCtx();
-    if (qrPop.classList.contains('show') && !qrPop.contains(e.target) && !$('#btn-qr').contains(e.target)) closeQr();
-  });
-
-  // ------------------------------------------------------------ lightbox
-
-  let closeLightbox = () => {};
-
-  function openLightbox(url, menu) {
-    lightbox.innerHTML = `<img src="${url}" alt="">`;
-    lightbox.hidden = false;
-    reveal(lightbox);
-    const close = () => {
-      dropEsc(close);
-      closeLightbox = () => {};
-      lightbox.classList.remove('show');
-      setTimeout(() => { lightbox.hidden = true; lightbox.innerHTML = ''; }, 260);
-    };
-    closeLightbox = close;
-    lightbox.onclick = () => { if (!ctxDismissed) close(); };
-    lightbox.oncontextmenu = (e) => {
-      e.preventDefault();
-      if (menu) menu(e.clientX, e.clientY);
-    };
-    pushEsc(close);
-  }
-
-  // ------------------------------------------------------------ QR pop
-
-  let qrLoaded = false;
-
-  async function openQr() {
-    if (!qrLoaded) {
-      $('#qr-img').src = await window.umbral.qr();
-      qrLoaded = true;
-    }
-    qrPop.hidden = false;
-    reveal(qrPop);
-    pushEsc(closeQr);
-  }
-
-  function closeQr() {
-    dropEsc(closeQr);
-    qrPop.classList.remove('show');
-    setTimeout(() => { qrPop.hidden = true; }, 220);
-  }
-
-  $('#btn-qr').addEventListener('click', () => {
-    qrPop.classList.contains('show') ? closeQr() : openQr();
-  });
-
-  // ------------------------------------------------------------ purga
-
-  function confirmPurge({ title, body, action }) {
-    return new Promise((resolve) => {
-      const overlay = document.createElement('div');
-      overlay.className = 'modal-overlay';
-      overlay.innerHTML = `
-        <div class="modal">
-          <div class="modal-icon">${nukeIcon(24)}</div>
-          <h3>${title}</h3>
-          <p>${body}</p>
-          <div class="modal-actions">
-            <button class="btn" data-act="cancel">Cancelar</button>
-            <button class="btn btn-danger" data-act="ok">${action}</button>
-          </div>
-        </div>`;
-      $('#modal-root').append(overlay);
-      reveal(overlay);
-      const close = (val) => {
-        dropEsc(escClose);
-        overlay.classList.remove('show');
-        setTimeout(() => overlay.remove(), 260);
-        resolve(val);
-      };
-      const escClose = () => close(false);
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) return close(false);
-        const act = e.target.closest('[data-act]')?.dataset.act;
-        if (act) close(act === 'ok');
-      });
-      pushEsc(escClose);
-    });
-  }
-
-  $('#btn-nuke').addEventListener('click', async () => {
-    if (view === 'in') {
-      if (!images.length) return toast('No hay nada que purgar', { ok: false });
-      const n = images.length;
-      const go = await confirmPurge({
-        title: 'Purga total',
-        body: `Se van a eliminar <strong>${plural(n, 'captura', 'capturas')}</strong>.<br>No hay vuelta atrás.`,
-        action: 'Purgar',
-      });
-      if (!go) return;
-      await purgeCards(gallery);
-      images = [];
-      updateMeta();
-      await window.umbral.clearAll();
-      toast('Umbral despejado');
-    } else {
-      if (!outItems.length) return toast('La bandeja ya está vacía', { ok: false });
-      const n = outItems.length;
-      const go = await confirmPurge({
-        title: 'Vaciar la bandeja',
-        body: `Se van a quitar <strong>${plural(n, 'archivo', 'archivos')}</strong> y el celu deja de verlos.<br>Los originales en tu PC no se tocan.`,
-        action: 'Vaciar',
-      });
-      if (!go) return;
-      await purgeCards(outGrid);
-      outItems = [];
-      updateMeta();
-      await window.umbral.outbox.clear();
-      toast('Bandeja vacía');
-    }
-  });
-
-  // ------------------------------------------------------------ toasts
-
-  function toast(msg, { ok = true, img = null } = {}) {
-    const t = document.createElement('div');
-    t.className = 'toast';
-    t.innerHTML = img
-      ? `<img src="${img}" alt=""><span></span>`
-      : `<span class="toast-ico${ok ? '' : ' bad'}">${icon(ok ? 'check' : 'x', 14, 2.4)}</span><span></span>`;
-    t.querySelector('span:last-child').textContent = msg;
-    $('#toasts').append(t);
-    reveal(t);
-    setTimeout(() => {
-      t.classList.remove('show');
-      setTimeout(() => t.remove(), 260);
-    }, 2600);
-  }
-
-  // ------------------------------------------------------------ actualización
-  // Una tarjeta abajo a la izquierda (los toasts van a la derecha). Aparece
-  // sola solo si hay algo que hacer; "al día" y errores, solo si lo pediste.
-
-  const upd = $('#upd');
-  let updDismissed = '';
-  let updTimer = 0;
-
-  const mb = (b) => b ? ` · ${Math.round(b / 1048576)} MB` : ''; // que el número no quede solo en un renglón
-  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
-
-  function updView(s) {
-    switch (s.phase) {
-      // El título del release es "Umbral X — qué trae": arriba la versión, abajo el qué
-      case 'available': return { ico: 'download', title: `Umbral ${s.version} disponible`,
-        sub: `${cap((s.name || '').split(/\s+[—-]\s+/).slice(1).join(' — ')) || `Tenés la ${s.current}`}${mb(s.bytes)}`,
-        acts: [['open', 'Ver novedades', 'btn'], ['download', 'Descargar', 'btn btn-accent']] };
-      case 'downloading': return { ico: 'download', title: `Descargando la ${s.version}`, sub: `${Math.round(s.pct * 100)}%`, bar: s.pct, sticky: true };
-      case 'ready': return { ico: 'check', cls: 'ok', title: `La ${s.version} está lista`, sub: 'Si no reiniciás ahora, se instala cuando salgas de Umbral.',
-        acts: [['install', 'Reiniciar', 'btn btn-accent']] };
-      case 'checking': return s.manual && { ico: 'refresh', cls: 'spin', title: 'Buscando actualizaciones', sub: 'Consultando GitHub' };
-      case 'current': return s.manual && { ico: 'check', cls: 'ok', title: 'Estás al día', sub: `Umbral ${s.current}`, auto: 3200 };
-      case 'error': return s.manual && { ico: 'x', cls: 'bad', title: 'No se pudo buscar', sub: s.error };
-      case 'unsupported': return s.manual && { ico: 'x', cls: 'bad', title: 'Sin actualización automática', sub: s.reason };
-      default: return null;
-    }
-  }
-
-  function hideUpd() {
-    clearTimeout(updTimer);
-    if (upd.hidden) return;
-    upd.classList.remove('show');
-    updTimer = setTimeout(() => { upd.hidden = true; }, 260);
-  }
-
-  function renderUpd(s) {
-    const v = updView(s);
-    const key = `${s.phase}:${s.version || ''}`;
-    if (!v || updDismissed === key) return hideUpd();
-
-    // Mientras baja solo cambian el número y la barra: no rearmar la tarjeta
-    if (v.bar != null && upd.dataset.key === key && upd.classList.contains('show')) {
-      upd.querySelector('.upd-txt span').textContent = v.sub;
-      upd.querySelector('.upd-bar').style.setProperty('--p', v.bar);
-      return;
-    }
-    upd.dataset.key = key;
-    upd.innerHTML = `
-      <div class="upd-head">
-        <span class="upd-ico ${v.cls || ''}">${icon(v.ico, 16, 2.2)}</span>
-        <div class="upd-txt"><b></b><span class="selectable"></span></div>
-        ${v.sticky ? '' : `<button class="icon-btn upd-x" data-upd="close" aria-label="Cerrar">${icon('x', 14)}</button>`}
+function updHTML(v) {
+  const ico = v.ico === 'spin' ? Icons.spinner() : Icons.svg(v.ico);
+  return `
+    <div class="ub-upd__head">
+      <span class="ub-upd__ico${v.bad ? ' is-bad' : ''}">${ico}</span>
+      <div class="ub-upd__txt">
+        <div class="ub-upd__title">${esc(v.title)}</div>
+        <div class="ub-upd__sub ox-copyable">${esc(v.sub || '')}</div>
       </div>
-      ${v.bar != null ? '<div class="upd-bar"><i></i></div>' : ''}
-      ${v.acts ? `<div class="upd-acts">${v.acts.map(([a, l, c]) => `<button class="${c}" data-upd="${a}">${l}</button>`).join('')}</div>` : ''}`;
-    upd.querySelector('b').textContent = v.title;
-    upd.querySelector('.upd-txt span').textContent = v.sub;
-    if (v.bar != null) upd.querySelector('.upd-bar').style.setProperty('--p', v.bar);
+      ${v.sticky ? '' : `<button class="ox-iconbtn ox-iconbtn--sm ub-upd__x" data-upd="close" aria-label="Cerrar">${Icons.svg('close')}</button>`}
+    </div>
+    ${v.bar != null ? `<div class="ox-meter"><div class="ox-meter__fill" style="--ox-pct:${(v.bar * 100).toFixed(1)}%"></div></div>` : ''}
+    ${v.acts ? `<div class="ub-upd__acts">${v.acts.map(([a, l, c]) => `<button class="ox-btn ox-btn--sm ${c}" data-upd="${a}">${esc(l)}</button>`).join('')}</div>` : ''}`;
+}
 
-    clearTimeout(updTimer);
-    if (!upd.classList.contains('show')) { upd.hidden = false; reveal(upd); }
-    if (v.auto) updTimer = setTimeout(() => { updDismissed = key; hideUpd(); }, v.auto);
+function hideUpd() {
+  clearTimeout(updTimer);
+  if (!upd) return;
+  exit(upd, { fallback: 260 });
+  upd = null;
+  updKey = '';
+}
+
+function renderUpd(s) {
+  const v = updView(s);
+  const key = `${s.phase}:${s.version || ''}`;
+  if (!v || updDismissed === key) return hideUpd();
+
+  if (!upd) {
+    upd = document.createElement('div');
+    upd.className = 'ub-upd';
+    upd.innerHTML = updHTML(v);
+    upd.addEventListener('click', (e) => {
+      const act = e.target.closest('[data-upd]')?.dataset.upd;
+      if (!act) return;
+      if (act === 'close') { updDismissed = updKey; hideUpd(); }
+      else api.update[act]();
+    });
+    layer().appendChild(upd);
+  } else if (key === updKey && v.bar != null) {
+    // Mientras baja solo cambian el número y la barra: no se rearma la tarjeta.
+    valor(upd.querySelector('.ub-upd__sub'), esc(v.sub));
+    upd.querySelector('.ox-meter__fill')?.style.setProperty('--ox-pct', `${(v.bar * 100).toFixed(1)}%`);
+  } else if (key !== updKey) {
+    const el = upd;
+    deslizarAlto(el, () => swap(el, updHTML(v), { relevo: true }));
+  }
+  updKey = key;
+
+  clearTimeout(updTimer);
+  if (v.auto) updTimer = setTimeout(() => { updDismissed = key; hideUpd(); }, v.auto);
+}
+
+/* ══ Arranque ════════════════════════════════════════════════════════════════ */
+
+function syncWindowColor() {
+  const hex = colorToken('--ox-bg');
+  if (hex) win.setBackground(hex);
+}
+
+async function boot() {
+  Icons.mount(document);      // reemplaza los <i data-icon> del index.html
+  Tooltip.init();
+  initClickFlash();
+  initScrollFades();
+  syncWindowColor();
+  $('srv-mark').outerHTML = mark('running');
+  Router.define({ recibidas: () => view('recibidas'), celu: () => view('celu') }, $('view'));
+
+  let settings = {};
+  try {
+    const info = await api.serverInfo();
+    S.url = info.url || '';
+    [S.images, S.out, settings] = await Promise.all([
+      api.listImages(), api.outbox.list(), window.onyx.settings.get().catch(() => ({})),
+    ]);
+    S.qr = await api.qr().catch(() => '');
+  } catch (err) {
+    console.error(err);
+    Toast.error('No se pudo iniciar', err.message);
   }
 
-  upd.addEventListener('click', (e) => {
-    const act = e.target.closest('[data-upd]')?.dataset.upd;
-    if (!act) return;
-    if (act === 'close') { updDismissed = upd.dataset.key; hideUpd(); }
-    else window.umbral.update[act]();
-  });
+  $('addr').textContent = S.url;
+  wireSize(settings.miniatura || 220);
+  wireChrome();
+  Router.onChange(updateChrome);
+  Router.go('recibidas');
+  updateChrome();
+  S.booting = false;
 
-  window.umbral.update.onState((s) => {
-    if (s.manual) updDismissed = ''; // si lo pediste, se muestra aunque lo hayas cerrado antes
+  api.onNewImage((img) => {
+    addImage(img);
+    const t = Toast.show({ title: 'Captura recibida', text: img.name, icon: 'download', duration: 3200 });
+    const thumb = document.createElement('img');
+    thumb.className = 'ub-toast-thumb';
+    thumb.src = img.url;
+    thumb.alt = '';
+    t.el.querySelector(':scope > .ox-icon')?.replaceWith(thumb);
+  });
+  api.outbox.onAdded((list, opts) => addOut(list, opts));
+  api.outbox.onDelivered((item) => {
+    const cur = S.out.find((i) => i.name === item.name);
+    if (!cur) return;
+    const first = !cur.delivered;
+    cur.delivered = item.delivered;
+    sync('celu');
+    if (first) Toast.show({ title: 'Bajada en el celu', text: item.name, icon: 'check', duration: 3200 });
+  });
+  api.update.onState((s) => {
+    if (s.manual) updDismissed = '';   // si lo pediste, se muestra aunque la hayas cerrado antes
     renderUpd(s);
   });
-  window.umbral.update.state().then(renderUpd);
+  api.update.state().then(renderUpd);
 
-  // ------------------------------------------------------------ slider
-
-  const savedThumb = localStorage.getItem('umbral.thumb') || '220';
-  slider.value = savedThumb;
-  document.documentElement.style.setProperty('--thumb', savedThumb + 'px');
-  slider.addEventListener('input', () => {
-    document.documentElement.style.setProperty('--thumb', slider.value + 'px');
-    localStorage.setItem('umbral.thumb', slider.value);
+  // El splash se va recién cuando ya hay algo pintado debajo.
+  raf2(() => {
+    const splash = $('boot-splash');
+    if (!splash) return;
+    splash.style.opacity = '0';
+    splash.addEventListener('transitionend', () => splash.remove(), { once: true });
+    setTimeout(() => splash.remove(), 600);
   });
 
-  // ------------------------------------------------------------ fades del scroll
+  api.ready();   // recién ahora puede llegar lo de «Enviar a»
+}
 
-  function wireScrollFade(el) {
-    const update = () => {
-      const atTop = el.scrollTop <= 0;
-      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-      el.classList.toggle('fade-top', !atTop);
-      el.classList.toggle('fade-bottom', !atBottom);
-    };
-    el.addEventListener('scroll', update, { passive: true });
-    new ResizeObserver(update).observe(el);
-    new ResizeObserver(update).observe(el.firstElementChild);
-    update();
-  }
-  wireScrollFade(wrap);
-  wireScrollFade(outWrap);
-
-  // ------------------------------------------------------------ tooltips
-
-  const tip = document.createElement('div');
-  tip.className = 'u-tip';
-  document.body.append(tip);
-
-  document.addEventListener('mouseover', (e) => {
-    const t = e.target.closest('[data-tip]');
-    if (!t) return;
-    tip.textContent = t.dataset.tip;
-    const r = t.getBoundingClientRect();
-    tip.style.left = Math.max(6, Math.min(r.left + r.width / 2 - tip.offsetWidth / 2, innerWidth - tip.offsetWidth - 6)) + 'px';
-    tip.style.top = r.bottom + 7 + 'px';
-    tip.classList.add('show');
-    t.addEventListener('mouseleave', () => tip.classList.remove('show'), { once: true });
-    t.addEventListener('mousedown', () => tip.classList.remove('show'), { once: true });
-  });
-
-  // ------------------------------------------------------------ ventana
-
-  $('#win-min').addEventListener('click', () => window.umbral.win.minimize());
-  $('#win-max').addEventListener('click', () => window.umbral.win.maximize());
-  $('#win-close').addEventListener('click', () => window.umbral.win.close());
-  window.umbral.win.onMaximized((v) => {
-    $('#win-max').innerHTML = icon(v ? 'restore' : 'square', 12, 1.6);
-  });
-
-  // ------------------------------------------------------------ carpeta
-
-  $('#btn-folder').addEventListener('click', () => window.umbral.openInbox(view === 'out' ? 'outbox' : 'inbox'));
-
-  // ------------------------------------------------------------ init
-
-  window.umbral.onNewImage((img) => {
-    addImage(img);
-    toast('Captura recibida', { img: img.url });
-  });
-
-  (async () => {
-    const info = await window.umbral.serverInfo();
-    addrEl.textContent = info.url;
-    $('#empty-addr').textContent = info.url;
-    $('#out-empty-addr').textContent = info.url;
-
-    [images, outItems] = await Promise.all([window.umbral.listImages(), window.umbral.outbox.list()]);
-    mountStaggered(gallery, images.map(makeCard));
-    mountStaggered(outGrid, outItems.map(makeOutCard));
-    updateMeta();
-    // la píldora arranca en su lugar, sin deslizarse desde x=0
-    const ind = seg.querySelector('.seg-ind');
-    ind.style.transition = 'none';
-    placeSegInd();
-    void ind.offsetWidth;
-    ind.style.transition = '';
-
-    window.umbral.ready(); // recién ahora puede llegar lo de "Enviar a"
-  })();
-})();
+boot();
