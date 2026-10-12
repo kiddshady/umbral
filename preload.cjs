@@ -55,6 +55,12 @@ contextBridge.exposeInMainWorld('umbral', {
   clearAll: () => ipcRenderer.invoke('images:clear'),
   serverInfo: () => ipcRenderer.invoke('server:info'),
   qr: () => ipcRenderer.invoke('server:qr'),
+  pair: {
+    start: () => ipcRenderer.invoke('pair:start'),
+    cancel: () => ipcRenderer.invoke('pair:cancel'),
+    revoke: () => ipcRenderer.invoke('pair:revoke'),
+    onDone: (cb) => on('pair:done', cb),
+  },
   openInbox: (which) => ipcRenderer.invoke('inbox:open', which),
   onNewImage: (cb) => on('image:new', cb),
   outbox: {

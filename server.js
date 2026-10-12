@@ -10,6 +10,11 @@
 //   GET  /favicon.ico     → el ícono de la pestaña
 //   GET  /icon            → el ícono maestro (PNG 512)
 //   GET  /ping            → health-check; con el nombre del equipo, que la app del celu muestra
+//   POST /pair            → {code} de 6 dígitos → la llave de esta PC (ver pairing.js)
+//
+// Desde la 0.4 todo lo que mueve archivos (/drop y /out*) pide la llave:
+// Authorization: Bearer <llave>, o ?k=<llave>. Lo demás queda abierto, porque
+// el celu tiene que poder encontrar la PC y vincularse antes de tenerla.
 
 const http = require('http');
 const fs = require('fs');
@@ -109,9 +114,29 @@ function disposition(kind, name) {
   return `${kind}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }
 
+// La llave del pedido: el header, o ?k= para lo que el navegador pide solo (<img src>)
+function keyOf(req, url) {
+  const m = /^Bearer\s+(\S+)/i.exec(req.headers.authorization || '');
+  return m ? m[1] : url.searchParams.get('k');
+}
+
+// Las direcciones de Tailscale de esta PC (100.64.0.0/10): el celu las guarda
+// al vincularse y las prueba cuando no encuentra la PC en la red de casa.
+function tailnetIps() {
+  const out = [];
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const net of list || []) {
+      if (net.family !== 'IPv4' || net.internal) continue;
+      const [a, b] = net.address.split('.').map(Number);
+      if (a === 100 && b >= 64 && b <= 127) out.push(net.address);
+    }
+  }
+  return out;
+}
+
 // --- servidor --------------------------------------------------------------
 
-function createUmbralServer({ inboxDir, basePort, onImage, outbox, thumb, onDelivered }) {
+function createUmbralServer({ inboxDir, basePort, onImage, outbox, thumb, onDelivered, pairing, onPaired }) {
   const pagePath = path.join(__dirname, 'phone.html');
 
   const server = http.createServer(async (req, res) => {
@@ -124,7 +149,19 @@ function createUmbralServer({ inboxDir, basePort, onImage, outbox, thumb, onDeli
         return res.end(page);
       }
       if (req.method === 'GET' && p === '/ping') {
-        return json(res, 200, { ok: true, app: 'umbral', name: os.hostname() });
+        // `paired` le dice al celu si su llave sigue sirviendo; las direcciones
+        // de Tailscale solo se las lleva quien ya está vinculado.
+        const paired = pairing.check(keyOf(req, url));
+        return json(res, 200, { ok: true, app: 'umbral', name: os.hostname(), auth: true, paired,
+          ...(paired ? { tailnet: tailnetIps() } : {}) });
+      }
+      if (req.method === 'POST' && p === '/pair') {
+        let body = {};
+        try { body = JSON.parse((await readBody(req)).toString('utf8') || '{}'); } catch { /* cuerpo roto: código vacío */ }
+        const r = pairing.redeem(body.code);
+        if (!r.ok) return json(res, r.error === 'bad-code' ? 403 : 409, r);
+        onPaired?.({ device: String(body.device || '').slice(0, 60) });
+        return json(res, 200, { ok: true, key: r.key, name: os.hostname(), tailnet: tailnetIps() });
       }
       if (req.method === 'GET' && p === '/favicon.ico') {
         // los navegadores lo buscan acá aunque la página no lo declare
@@ -140,6 +177,9 @@ function createUmbralServer({ inboxDir, basePort, onImage, outbox, thumb, onDeli
         res.writeHead(200, { 'content-type': 'image/png', 'content-disposition': 'inline; filename="umbral.png"' });
         return res.end(png);
       }
+
+      // De acá para abajo, solo con la llave.
+      if (!pairing.check(keyOf(req, url))) return json(res, 401, { ok: false, error: 'unauthorized' });
 
       // ---------------------------------------------------- teléfono → PC
       if (req.method === 'POST' && p === '/drop') {
@@ -226,4 +266,4 @@ function createUmbralServer({ inboxDir, basePort, onImage, outbox, thumb, onDeli
   });
 }
 
-module.exports = { createUmbralServer };
+module.exports = { createUmbralServer, tailnetIps };

@@ -112,6 +112,22 @@
   .recv-empty svg { color:var(--elev3); margin-bottom:6px; }
   .recv-empty strong { color:var(--text2); font-size:15px; font-weight:600; }
 
+  /* ---- vincular (sin llave: el QR de la PC o el código de 6 dígitos) */
+  .pair { width:100%; display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center;
+          padding:28px 20px; border-radius:16px; background:var(--elev);
+          box-shadow:0 8px 28px rgba(0,0,0,.45), inset 0 0 0 1px rgba(157,123,255,.16);
+          opacity:0; transform:translateY(8px); animation:in .5s var(--ease) .05s forwards; }
+  .pair strong { font-size:16px; font-weight:600; }
+  .pair p { font-size:13px; color:var(--text2); line-height:1.5; }
+  .pair input { width:100%; max-width:220px; padding:12px; border-radius:10px; border:none; outline:none;
+                background:var(--elev2); color:var(--text); font:600 24px/1 ui-monospace,'Cascadia Mono',monospace;
+                letter-spacing:.2em; text-align:center;
+                box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);
+                transition:box-shadow .2s var(--ease); }
+  .pair input:focus { box-shadow:inset 0 0 0 1px var(--accent); }
+  .pair .msg { min-height:18px; font-size:12.5px; color:var(--muted); transition:color .2s var(--ease); }
+  .pair .msg.err { color:var(--danger); }
+
   .spin { animation:spin 1s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
   @keyframes in { to { opacity:1; transform:none; } }
@@ -124,6 +140,14 @@
     </svg>
     <h1>Umbral</h1>
   </div>
+
+  <section class="pair" id="p-pair" hidden>
+    <strong>Vincular este navegador</strong>
+    <p>Escane&aacute; el QR de Umbral en la PC, o toc&aacute; &laquo;C&oacute;digo para la app del celu&raquo; ah&iacute; y escribilo ac&aacute;.</p>
+    <input id="pair-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000 000">
+    <button class="btn" id="pair-go">Vincular</button>
+    <span class="msg" id="pair-msg"></span>
+  </section>
 
   <div class="tabs" id="tabs" data-on="send">
     <span class="tab-ind"></span>
@@ -168,6 +192,24 @@
     file: '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>',
   };
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // ------------------------------------------------------------ la llave
+  // Desde la 0.4 Umbral pide una llave para mover archivos. El QR de la PC la
+  // trae en el fragmento (#k=…), que el navegador no le manda a nadie: acá se
+  // guarda y se borra de la barra de direcciones.
+  const LLAVE = 'umbral-llave';
+  const leerLlave = () => { try { return localStorage.getItem(LLAVE) || ''; } catch { return ''; } };
+  const guardarLlave = (k) => { try { localStorage.setItem(LLAVE, k); } catch {} };
+  let llave = leerLlave();
+  {
+    const m = /(?:^#|&)k=([^&]+)/.exec(location.hash);
+    if (m) {
+      llave = decodeURIComponent(m[1]);
+      guardarLlave(llave);
+      history.replaceState(null, '', location.pathname);
+    }
+  }
+  const auth = () => (llave ? { authorization: 'Bearer ' + llave } : {});
   const reveal = (el, cls) => { void el.offsetHeight; el.classList.add(cls); };
 
   // ------------------------------------------------------------ pestañas
@@ -227,9 +269,10 @@
       try {
         const r = await fetch('/drop', {
           method: 'POST',
-          headers: { 'content-type': file.type || 'application/octet-stream' },
+          headers: { 'content-type': file.type || 'application/octet-stream', ...auth() },
           body: file,
         });
+        if (r.status === 401) pedirVinculo();
         ok = r.ok && (await r.json()).ok;
       } catch {}
       li.classList.add(ok ? 'ok' : 'err');
@@ -266,7 +309,7 @@
       img.loading = 'lazy';
       img.alt = '';
       img.onload = () => img.classList.add('loaded');
-      img.src = '/out/thumb/' + enc(item.name) + '?v=' + item.mtime;
+      img.src = '/out/thumb/' + enc(item.name) + '?v=' + item.mtime + '&k=' + enc(llave);
       thumb.append(img);
     } else {
       thumb.insertAdjacentHTML('afterbegin', '<div class="file-ico">' + SVG.file + '<b></b></div>');
@@ -300,7 +343,8 @@
   async function refresh() {
     let items;
     try {
-      const r = await fetch('/out', { cache: 'no-store' });
+      const r = await fetch('/out', { cache: 'no-store', headers: auth() });
+      if (r.status === 401) return pedirVinculo();
       items = (await r.json()).items;
     } catch { return; } // PC apagada o fuera del WiFi: se reintenta en el próximo ciclo
     loaded = true;
@@ -337,7 +381,7 @@
     entry.el.classList.remove('err');
     paintTile(entry);
     try {
-      const r = await fetch('/out/file/' + enc(name) + '?dl=1', { cache: 'no-store' });
+      const r = await fetch('/out/file/' + enc(name) + '?dl=1', { cache: 'no-store', headers: auth() });
       if (!r.ok) throw new Error(r.status);
       const blob = await r.blob();
       const a = document.createElement('a');
@@ -365,10 +409,58 @@
     for (const name of pending) await download(name);
   });
 
+  // ------------------------------------------------------------ vincular
+
+  const pairEl = $('#p-pair');
+  const pairCode = $('#pair-code');
+  const pairMsg = $('#pair-msg');
+  let vinculado = true;
+
+  function pedirVinculo() {
+    if (!vinculado) return;
+    vinculado = false;
+    tabs.hidden = true;
+    panels.send.hidden = panels.recv.hidden = true;
+    pairEl.hidden = false;
+  }
+
+  function mostrarApp() {
+    vinculado = true;
+    pairEl.hidden = true;
+    tabs.hidden = false;
+    panels[current].hidden = false;
+    refresh();
+  }
+
+  async function vincular() {
+    const code = pairCode.value.replace(/\D/g, '');
+    if (code.length !== 6) { pairMsg.className = 'msg err'; pairMsg.textContent = 'Son 6 números.'; return; }
+    pairMsg.className = 'msg';
+    pairMsg.textContent = 'Vinculando…';
+    try {
+      const r = await fetch('/pair', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code, device: 'Navegador del celu' }) });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error);
+      llave = j.key;
+      guardarLlave(llave);
+      pairMsg.textContent = '';
+      pairCode.value = '';
+      mostrarApp();
+    } catch (err) {
+      pairMsg.className = 'msg err';
+      pairMsg.textContent = err.message === 'bad-code' ? 'Ese código no es.'
+        : err.message === 'no-pairing' ? 'El código venció. Pedí otro en la PC.' : 'No se pudo hablar con la PC.';
+    }
+  }
+
+  $('#pair-go').addEventListener('click', vincular);
+  pairCode.addEventListener('keydown', (e) => { if (e.key === 'Enter') vincular(); });
+
   // Consulta cada 3 s mientras la página está a la vista: lo que se suelta
   // en la PC aparece solo, y la pestaña Enviar igual muestra el contador.
   refresh();
-  setInterval(() => { if (!document.hidden) refresh(); }, 3000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+  setInterval(() => { if (!document.hidden && vinculado) refresh(); }, 3000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && vinculado) refresh(); });
 </script>
 </body></html>

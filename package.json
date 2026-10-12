@@ -8,7 +8,7 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "test": "node test/tokens.test.mjs && node test/store.test.mjs && node test/format.test.mjs",
+    "test": "node test/tokens.test.mjs && node test/store.test.mjs && node test/format.test.mjs && node test/vinculacion.test.mjs",
     "smoke": "electron test/renderer.test.cjs",
     "icons": "node scripts/build-icons.mjs",
     "dist": "electron-builder --win --publish never",
@@ -38,6 +38,7 @@
       "src/**/*",
       "server.js",
       "outbox.js",
+      "pairing.js",
       "updater.js",
       "phone.html",
       "renderer/**/*",

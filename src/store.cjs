@@ -58,6 +58,9 @@ const DEFAULT_SETTINGS = {
   schema: SCHEMA,
   /** El lado de las miniaturas, en px (el control de tamaño de la barra). */
   miniatura: 220,
+  /** Abrir escondida en el tray al iniciar sesión en Windows: si Umbral no
+      está corriendo, el celu y la otra PC no tienen a quién mandarle nada. */
+  abrirAlIniciar: true,
 };
 
 /** Migraciones: cada función lleva el archivo de la versión N a la N+1.

@@ -36,6 +36,7 @@ const { pathToFileURL } = require('url');
 const QRCode = require('qrcode');
 const { createUmbralServer } = require('./server');
 const { createOutbox } = require('./outbox');
+const { createPairing } = require('./pairing');
 const updater = require('./updater');
 
 /* Color base de arranque. Tiene que coincidir con --ox-bg de tokens.css (lo
@@ -60,6 +61,11 @@ let mainWindow = null;
 let tray = null;
 let quitting = false; // true solo cuando el usuario sale de verdad (tray → Salir)
 let serverInfo = { ip: null, port: null, url: null };
+let pairing = null;   // la llave del servidor y el código de vinculación (pairing.js)
+
+/* Al iniciar sesión, Windows la abre con --oculta: el servidor arranca y la
+   ventana espera en el tray hasta que Fran la llame. */
+const START_HIDDEN = process.argv.includes('--oculta');
 
 // En desarrollo, userData propio: si no, comparte el lock de instancia única
 // con la Umbral instalada y el `npm start` se cierra solo apenas arranca.
@@ -272,7 +278,28 @@ function saveWindowState() {
   }, 400);
 }
 
+/* El show() fuera de pantalla y, 200 ms después, a su lugar. Arrancando
+   oculta no pasa en ready-to-show sino la primera vez que se la llama. */
+let placed = false;
+let placing = false;
+let initialState = null;
+function place() {
+  if (placed || placing || !mainWindow) return;
+  placing = true;
+  const state = initialState;
+  mainWindow.show();   // el flash DWM ocurre acá: off-screen, invisible
+  setTimeout(() => {
+    placing = false;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    placed = true;
+    mainWindow.setPosition(state.x, state.y);
+    if (state.maximized) mainWindow.maximize();
+    mainWindow.focus();
+  }, 200);
+}
+
 function createWindow(state) {
+  initialState = state;
   mainWindow = new BrowserWindow({
     // Nace fuera de pantalla: el flash del compositor ocurre donde nadie lo ve.
     x: -20000,
@@ -297,14 +324,8 @@ function createWindow(state) {
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   mainWindow.once('ready-to-show', () => {
-    // El flash DWM ocurre acá — off-screen, invisible.
-    mainWindow.show();
-    if (SMOKE) return;
-    setTimeout(() => {
-      if (!mainWindow || mainWindow.isDestroyed()) return;
-      mainWindow.setPosition(state.x, state.y);
-      if (state.maximized) mainWindow.maximize();
-    }, 200);
+    if (SMOKE) return mainWindow.show();   // el humo la quiere fuera de pantalla
+    if (!START_HIDDEN) place();
   });
 
   // En dev, la consola del renderer sale por la terminal: si un módulo no
@@ -353,6 +374,7 @@ function sendWin(channel, ...args) {
 
 function showMain() {
   if (!mainWindow) return;
+  if (!placed) return place();
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
@@ -372,15 +394,37 @@ let lastMenuKey = '';
 function refreshTrayMenu() {
   if (!tray) return;
   const item = updateMenuItem();
-  if (item.label === lastMenuKey) return; // el progreso llega muchas veces por segundo
-  lastMenuKey = item.label;
+  const alIniciar = loginItemOn();
+  const menuKey = `${item.label}|${alIniciar}`;
+  if (menuKey === lastMenuKey) return; // el progreso llega muchas veces por segundo
+  lastMenuKey = menuKey;
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Mostrar Umbral', click: showMain },
     item,
     { type: 'separator' },
+    { label: 'Abrir al iniciar Windows', type: 'checkbox', checked: alIniciar, enabled: app.isPackaged,
+      click: (mi) => { setLoginItem(mi.checked); store.saveSettings({ abrirAlIniciar: mi.checked }).catch(() => {}); refreshTrayMenu(); } },
+    { type: 'separator' },
     { label: 'Salir', click: () => app.quit() },
   ]));
   tray.setToolTip(updater.get().phase === 'ready' ? 'Umbral — actualización lista' : 'Umbral');
+}
+
+// ---------------------------------------------------------------------------
+// Arranque con Windows
+// ---------------------------------------------------------------------------
+
+/* Una entrada en el Run del usuario con --oculta. Solo empaquetada: en dev
+   apuntaría a electron.exe. La portable usa el exe real, no su copia temporal. */
+const loginItem = () => ({ path: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath, args: ['--oculta'] });
+
+function setLoginItem(on) {
+  if (!app.isPackaged || SMOKE) return;
+  app.setLoginItemSettings({ openAtLogin: !!on, ...loginItem() });
+}
+
+function loginItemOn() {
+  return app.isPackaged && app.getLoginItemSettings(loginItem()).openAtLogin;
 }
 
 function createTray() {
@@ -449,13 +493,22 @@ ipcMain.handle('images:clear', async () => {
 
 ipcMain.handle('server:info', () => serverInfo);
 
-ipcMain.handle('server:qr', () =>
-  QRCode.toDataURL(serverInfo.url, {
+// El QR lleva la llave en el fragmento: el navegador del celu la guarda y
+// nunca viaja a ningún servidor (ver pairing.js).
+const qrDataUrl = () =>
+  QRCode.toDataURL(`${serverInfo.url}/#k=${pairing.llave()}`, {
     margin: 1,
     width: 220,
     color: { dark: '#16131f', light: '#f2f0fa' }, // clásico oscuro-sobre-claro: escanea siempre
-  })
-);
+  });
+
+ipcMain.handle('server:qr', () => qrDataUrl());
+
+// Vincular: el código de 6 dígitos para la app del celu (2 min, un uso).
+ipcMain.handle('pair:start', () => pairing.start());
+ipcMain.handle('pair:cancel', () => pairing.cancel());
+// Olvidar dispositivos: llave nueva, y con ella un QR nuevo.
+ipcMain.handle('pair:revoke', async () => { await pairing.revoke(); return qrDataUrl(); });
 
 ipcMain.handle('inbox:open', (_e, which) => {
   // explorer.exe directo: shell.openPath falla silencioso en algunos contextos
@@ -554,6 +607,12 @@ app.whenReady().then(async () => {
   // En el humo, argv trae el archivo del test: no es un «Enviar a».
   if (!SMOKE) pendingArgs.push(...argFiles(process.argv.slice(1)));
 
+  const vinculo = store.doc('vinculo', null);
+  pairing = await createPairing({
+    load: async () => (await vinculo.read())?.llave || null,
+    save: (llave) => vinculo.write({ llave }),
+  });
+
   // Servidor primero: cuando el renderer pida server:info, ya está la dirección.
   const { port } = await createUmbralServer({
     inboxDir,
@@ -565,6 +624,8 @@ app.whenReady().then(async () => {
     outbox,
     thumb: makeThumb,
     onDelivered: (m) => sendWin('outbox:delivered', outMeta(m)),
+    pairing,
+    onPaired: (d) => sendWin('pair:done', d),
   });
   const ip = lanIp();
   serverInfo = { ip, port, url: `http://${ip}:${port}` };
@@ -573,6 +634,9 @@ app.whenReady().then(async () => {
   createWindow(await loadWindowState());
   if (SMOKE) return;
   updater.init({ getWin: () => mainWindow, onChange: refreshTrayMenu });
+  // El registro sigue al ajuste en cada arranque: si la app se reinstaló en
+  // otra carpeta, la entrada vuelve a apuntar bien.
+  setLoginItem((await store.loadSettings().catch(() => ({}))).abrirAlIniciar !== false);
   createTray();
   ensureSendToShortcut();
 });

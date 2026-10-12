@@ -40,10 +40,15 @@ setTimeout(() => bail('timeout de 120s'), 120000);
 /* Un PNG de 4×3 de verdad (el servidor mira los magic bytes). */
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAFklEQVR4nGNgYGD4z8DAwMDAwMDAAAAEcQEBVtl8zQAAAABJRU5ErkJggg==', 'base64');
 
-function request(method, p, body) {
+/* Desde la 0.4 el servidor pide la llave: el humo hace de celu ya vinculado
+   y la lee de donde la guarda el main (vinculo.json en UMBRAL_DATA). */
+const llave = () => JSON.parse(fs.readFileSync(path.join(DIR, 'vinculo.json'), 'utf8')).llave;
+
+function request(method, p, body, { sinLlave = false, type = 'image/png' } = {}) {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port: PORT, method, path: p,
-      headers: body ? { 'content-type': 'image/png', 'content-length': body.length } : {} }, (res) => {
+    const headers = body ? { 'content-type': type, 'content-length': body.length } : {};
+    if (!sinLlave) headers.authorization = `Bearer ${llave()}`;
+    const req = http.request({ host: '127.0.0.1', port: PORT, method, path: p, headers }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) }));
@@ -174,9 +179,32 @@ app.whenReady().then(async () => {
   const btnQr = await rect('#btn-qr');
   ok('el QR abre adentro de la ventana, debajo de su botón', dentro(qr) && qr.y >= btnQr.y + btnQr.h, JSON.stringify({ qr, btnQr }));
   ok('trae la imagen del código', await js(`!!document.querySelector('.ub-qr img[src^="data:image/png"]')`));
+
+  // 0.4: la vinculación de la app del celu, de punta a punta por HTTP.
+  const pedir = (code) => request('POST', '/pair', Buffer.from(JSON.stringify({ code, device: 'Humo' })), { sinLlave: true, type: 'application/json' });
+  const codigo = async () => (await js(`document.querySelector('.ub-qr .ub-pair__code')?.textContent || ''`)).replace(/\D/g, '');
+  ok('sin llave, el servidor no entrega la bandeja', (await request('GET', '/out', null, { sinLlave: true })).status === 401);
+  await tap('.ub-qr [data-pair="start"]');
+  await sleep(700);
+  const cod = await codigo();
+  ok('el botón muestra un código de 6 dígitos', /^\d{6}$/.test(cod), cod);
+  ok('…con su vencimiento', /^Vence en [12]:\d\d$/.test(await js(`document.querySelector('.ub-qr .ub-pair__left')?.textContent.trim()`)));
+  const qrAlto = await rect('.ub-qr');
+  ok('el cartel crece y sigue adentro de la ventana', dentro(qrAlto) && qrAlto.h > qr.h, JSON.stringify({ antes: qr.h, despues: qrAlto }));
+  const canje = await pedir(cod);
+  ok('el celu canjea el código por la llave', canje.status === 200 && JSON.parse(canje.body).key === llave(), `${canje.status} ${canje.body}`);
+  await sleep(800);
+  ok('la app avisa que se vinculó', await js(`[...document.querySelectorAll('.ox-toast')].some((t) => /Celu vinculado/.test(t.textContent))`));
+  ok('…y el cartel vuelve al botón con la confirmación',
+    await js(`!document.querySelector('.ub-qr .ub-pair__code') && /quedó vinculado/.test(document.querySelector('.ub-qr .ub-qr__pair').textContent)`));
+
+  await tap('.ub-qr [data-pair="start"]');
+  await sleep(700);
+  const cod2 = await codigo();
   await tap('#view');
   await sleep(400);
   ok('un click afuera lo cierra', !(await js(`!!document.querySelector('.ub-qr')`)));
+  ok('…y el código que mostraba deja de servir', /^\d{6}$/.test(cod2) && (await pedir(cod2)).status === 409, cod2);
 
   console.log('\n6. Purga');
   await tap('.ox-segmented__opt[data-value="recibidas"]');

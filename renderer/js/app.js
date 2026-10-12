@@ -417,6 +417,66 @@ function wireSize(px) {
 
 let qr = null;
 
+/* Desde la 0.4 el servidor pide una llave (pairing.js en el main). El QR la
+   lleva adentro, así que el navegador del celu queda vinculado al escanearlo.
+   La app del celu no escanea: se vincula con un código de 6 dígitos que vale
+   2 minutos y que se anula al cerrar este cartel. */
+let pairTimer = 0;
+
+const pairIdleHTML = (nota = '') => `
+  <button class="ox-btn ox-btn--secondary ox-btn--sm" data-pair="start"><i data-icon="link"></i> Código para la app del celu</button>
+  ${nota ? `<div class="ub-qr__text">${esc(nota)}</div>` : ''}`;
+
+const restante = (expires) => {
+  const s = Math.max(0, Math.ceil((expires - Date.now()) / 1000));
+  return `Vence en ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+function pairSwap(html) {
+  if (!qr) return;
+  const box = qr.querySelector('.ub-qr__pair');
+  deslizarAlto(qr, () => swap(box, html, { relevo: true }));
+  Icons.mount(box);
+}
+
+function pairStop() {
+  clearInterval(pairTimer);
+  pairTimer = 0;
+}
+
+async function pairStart() {
+  const p = await attempt(() => api.pair.start(), { errorTitle: 'No se pudo generar el código' });
+  if (!p || !qr) return;
+  const code = `${p.code.slice(0, 3)} ${p.code.slice(3)}`;
+  pairSwap(`
+    <div class="ub-pair__code ox-mono ox-copyable">${esc(code)}</div>
+    <div class="ub-qr__text">Escribilo en Umbral Mobile. <span class="ub-pair__left">${restante(p.expires)}</span></div>`);
+  pairStop();
+  pairTimer = setInterval(() => {
+    if (!qr) return pairStop();
+    if (Date.now() >= p.expires) {
+      pairStop();
+      return pairSwap(pairIdleHTML('El código venció.'));
+    }
+    valor(qr.querySelector('.ub-pair__left'), restante(p.expires));
+  }, 1000);
+}
+
+async function olvidarDispositivos() {
+  closeQr();
+  const ok = await Modal.confirm({
+    title: '¿Olvidar los dispositivos vinculados?',
+    sub: 'Umbral cambia su llave. El celu y los navegadores que ya estaban vinculados van a tener que vincularse de nuevo.',
+    confirmLabel: 'Olvidar',
+    danger: true,
+  });
+  if (!ok) return;
+  const nuevo = await attempt(() => api.pair.revoke(), { errorTitle: 'No se pudo cambiar la llave' });
+  if (!nuevo) return;
+  S.qr = nuevo;
+  Toast.show({ title: 'Dispositivos olvidados', text: 'Hay que volver a vincular el celu.', icon: 'lock', duration: 3600 });
+}
+
 function toggleQr() {
   if (qr) return closeQr();
   const btn = $('btn-qr');
@@ -424,7 +484,15 @@ function toggleQr() {
   el.className = 'ub-qr';
   el.innerHTML = `
     <div class="ub-qr__code">${S.qr ? `<img src="${esc(S.qr)}" alt="QR de ${esc(S.url)}">` : ''}</div>
-    <div class="ub-qr__text">Escanealo con el teléfono para abrir Umbral en su navegador.</div>`;
+    <div class="ub-qr__text">Escanealo con el teléfono para abrir Umbral en su navegador. Ya va vinculado.</div>
+    <div class="ub-qr__pair">${pairIdleHTML()}</div>
+    <button class="ox-btn ox-btn--ghost ox-btn--sm ub-qr__forget" data-pair="forget"><i data-icon="lock"></i> Olvidar dispositivos</button>`;
+  Icons.mount(el);
+  el.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-pair]');
+    if (b?.dataset.pair === 'start') pairStart();
+    else if (b?.dataset.pair === 'forget') olvidarDispositivos();
+  });
   layer().appendChild(el);
   const a = btn.getBoundingClientRect();
   const left = Math.min(Math.max(10, a.left - 8), window.innerWidth - el.offsetWidth - 10);
@@ -442,6 +510,7 @@ function closeQr() {
   if (!qr) return;
   const el = qr;
   qr = null;
+  if (pairTimer) { pairStop(); api.pair.cancel(); }   // el código no queda vivo con el cartel cerrado
   document.removeEventListener('pointerdown', el.__afuera);
   $('btn-qr').classList.remove('is-open');
   exit(el, { fallback: 200 });
@@ -639,6 +708,10 @@ async function boot() {
     thumb.src = img.url;
     thumb.alt = '';
     t.el.querySelector(':scope > .ox-icon')?.replaceWith(thumb);
+  });
+  api.pair.onDone((d) => {
+    if (pairTimer) { pairStop(); pairSwap(pairIdleHTML('Listo, quedó vinculado.')); }
+    Toast.show({ title: 'Celu vinculado', text: d?.device || '', icon: 'check', duration: 3200 });
   });
   api.outbox.onAdded((list, opts) => addOut(list, opts));
   api.outbox.onDelivered((item) => {
