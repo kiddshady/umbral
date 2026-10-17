@@ -1,8 +1,8 @@
 # Umbral
 
-La puerta entre el teléfono y la PC, por la red local: las capturas del celu llegan a una galería en la PC, y los archivos que dejás en «Para el celu» se bajan desde el navegador del teléfono.
+La puerta entre el teléfono y la PC, por la red local: lo que mandás desde el celu (imágenes, PDF, cualquier archivo) llega a Recibidas en la PC, y los archivos que dejás en «Para el celu» se bajan desde el teléfono.
 
-- La PC escucha en el puerto `4747`. El celu sube con `POST /drop` (imagen cruda o multipart) y baja desde `/#recibir`.
+- La PC escucha en el puerto `4747`. El celu sube con `POST /drop` (el archivo crudo con su nombre en `X-Umbral-Name`, o multipart) y baja desde `/#recibir`. Las imágenes se reconocen por los bytes y se guardan por la fecha; lo demás, con el nombre que trae. Hasta la 0.4 solo entraban imágenes.
 - Cerrar la ventana la esconde en el tray; el servidor sigue andando.
 - En Android también está [Umbral Mobile](../UmbralMobile): encuentra a la PC sola y aparece en el menú Compartir.
 - Se actualiza sola desde los releases de este repo (no la versión portable).
@@ -11,7 +11,7 @@ La puerta entre el teléfono y la PC, por la red local: las capturas del celu ll
 ```bash
 npm install
 npm start          # desarrollo (puerto 4748, datos en .devdata/)
-npm test           # tokens en sincronía, escritura atómica y formato
+npm test           # tokens, escritura atómica, formato, vinculación y archivos que llegan
 npm run smoke      # arranca el main real con datos temporales y recorre la app
 npm run dist       # instalador + portable en dist/, sin publicar
 npm run release    # publica el release en GitHub (necesita GH_TOKEN)

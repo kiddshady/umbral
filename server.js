@@ -1,6 +1,6 @@
 // Umbral — servidor LAN
 // Teléfono → PC
-//   POST /drop            → recibe capturas (raw image o multipart/form-data)
+//   POST /drop            → recibe archivos (crudo en el cuerpo, o multipart/form-data)
 // PC → teléfono
 //   GET  /out             → lista de la bandeja de salida (JSON)
 //   GET  /out/thumb/:name → miniatura liviana (o el original si no se puede achicar)
@@ -23,7 +23,9 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 
-const MAX_BYTES = 64 * 1024 * 1024; // 64 MB por request — de sobra para capturas
+// 256 MB por pedido: entra un PDF pesado o un video corto del celu. El cuerpo
+// se junta en memoria, así que no conviene mucho más.
+const MAX_BYTES = 256 * 1024 * 1024;
 
 const MIME = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -34,8 +36,16 @@ const MIME = {
   '.apk': 'application/vnd.android.package-archive',
 };
 const mimeOf = (name) => MIME[path.extname(name).toLowerCase()] || 'application/octet-stream';
+// Al revés, para ponerle extensión a un archivo que llega sin nombre. Gana la
+// primera de cada tipo (.jpg y no .jpeg).
+const EXT_OF_MIME = {};
+for (const [ext, mime] of Object.entries(MIME)) EXT_OF_MIME[mime.split(';')[0]] ??= ext;
 
-// --- detección por magic bytes: solo entran imágenes de verdad -------------
+// --- qué es lo que llega ---------------------------------------------------
+// Las imágenes se reconocen por los bytes (magic bytes), no por el nombre:
+// entran aunque el celu no mande nombre, y la galería las muestra como foto.
+// Hasta la 0.4 eran lo único que entraba; desde la 0.5 entra cualquier
+// archivo, con el nombre que trae.
 
 function sniff(buf) {
   if (!buf || buf.length < 12) return null;
@@ -52,12 +62,62 @@ function stamp() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}-${p(d.getMilliseconds(), 3)}`;
 }
 
-async function saveImage(inboxDir, data) {
+// Un nombre que viene de afuera, apto para Windows: sin carpetas, sin los
+// caracteres prohibidos, sin punto ni espacio al final (Windows los come) y
+// sin los nombres de dispositivo (CON, NUL…), que después no se pueden borrar.
+const RESERVADOS = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
+function cleanName(raw) {
+  let n = path.basename(String(raw || '').replace(/\\/g, '/'));
+  n = n.replace(/[\x00-\x1f<>:"/\\|?*]/g, '_').replace(/[. ]+$/, '').trim();
+  if (!n || /^\.+$/.test(n)) return '';
+  if (n.length > 120) {
+    const ext = path.extname(n).slice(0, 12);
+    n = n.slice(0, 120 - ext.length) + ext;
+  }
+  if (RESERVADOS.test(n.split('.')[0])) n = `_${n}`;
+  return n;
+}
+
+// "informe.pdf" ya existe → "informe (2).pdf". Con `wx` el chequeo y la
+// escritura son una sola cosa: dos que llegan juntos no se pisan.
+async function writeFree(dir, wanted, data) {
+  const ext = path.extname(wanted);
+  const base = wanted.slice(0, wanted.length - ext.length);
+  for (let i = 1; i < 1000; i++) {
+    const name = i === 1 ? wanted : `${base} (${i})${ext}`;
+    try {
+      await fsp.writeFile(path.join(dir, name), data, { flag: 'wx' });
+      return name;
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+    }
+  }
+  throw new Error('no-name');
+}
+
+// `name` es el nombre que trajo: '' si no trajo ninguno, y undefined para un
+// campo de formulario sin archivo (un texto, no un adjunto), que solo entra si
+// sus bytes son una imagen, como siempre.
+async function saveDrop(inboxDir, data, { name, type = '' } = {}) {
+  if (!data?.length) return null;
   const ext = sniff(data);
-  if (!ext) return null;
-  const name = `cap_${stamp()}_${crypto.randomBytes(2).toString('hex')}.${ext}`;
-  await fsp.writeFile(path.join(inboxDir, name), data);
-  return name;
+  if (ext) {
+    const capName = `cap_${stamp()}_${crypto.randomBytes(2).toString('hex')}.${ext}`;
+    await fsp.writeFile(path.join(inboxDir, capName), data);
+    return capName;
+  }
+  if (name === undefined) return null;
+  const fallback = `archivo_${stamp()}${EXT_OF_MIME[type.split(';')[0].trim().toLowerCase()] || '.bin'}`;
+  return writeFree(inboxDir, cleanName(name) || fallback, data);
+}
+
+// El nombre del Content-Disposition de una parte: filename*=UTF-8''… si está
+// (RFC 5987), si no filename="…", que los navegadores mandan en UTF-8 crudo.
+function partName(headers) {
+  const star = /filename\*\s*=\s*utf-8''([^;\r\n]+)/i.exec(headers);
+  if (star) { try { return decodeURIComponent(star[1].trim()); } catch { /* sigue con el otro */ } }
+  const plain = /filename\s*=\s*(?:"([^"]*)"|([^;\r\n]*))/i.exec(headers);
+  return plain ? (plain[1] ?? plain[2] ?? '').trim() : undefined;
 }
 
 // --- multipart/form-data mínimo (un boundary, N archivos) ------------------
@@ -72,9 +132,11 @@ function parseMultipart(buf, boundary) {
     const chunk = buf.slice(pos + delim.length, next);
     const headerEnd = chunk.indexOf('\r\n\r\n');
     if (headerEnd !== -1) {
+      const headers = chunk.slice(0, headerEnd).toString('utf8');
       let body = chunk.slice(headerEnd + 4);
       if (body.slice(-2).toString('latin1') === '\r\n') body = body.slice(0, -2); // CRLF de cierre
-      if (body.length) parts.push({ data: body });
+      const type = /content-type:\s*([^\r\n]+)/i.exec(headers)?.[1] || '';
+      if (body.length) parts.push({ data: body, name: partName(headers), type });
     }
     pos = next;
   }
@@ -136,7 +198,7 @@ function tailnetIps() {
 
 // --- servidor --------------------------------------------------------------
 
-function createUmbralServer({ inboxDir, basePort, onImage, outbox, thumb, onDelivered, pairing, onPaired }) {
+function createUmbralServer({ inboxDir, basePort, onFile, outbox, thumb, onDelivered, pairing, onPaired }) {
   const pagePath = path.join(__dirname, 'phone.html');
 
   const server = http.createServer(async (req, res) => {
@@ -189,15 +251,19 @@ function createUmbralServer({ inboxDir, basePort, onImage, outbox, thumb, onDeli
         const bMatch = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(ctype);
         if (ctype.includes('multipart/form-data') && bMatch) {
           for (const part of parseMultipart(body, (bMatch[1] || bMatch[2]).trim())) {
-            const name = await saveImage(inboxDir, part.data);
+            const name = await saveDrop(inboxDir, part.data, part);
             if (name) saved.push(name);
           }
         } else {
-          const name = await saveImage(inboxDir, body);
+          // Crudo en el cuerpo: el nombre viaja en X-Umbral-Name, codificado
+          // por las tildes. Sin él, el archivo se llama por la fecha.
+          let wanted = '';
+          try { wanted = decodeURIComponent(req.headers['x-umbral-name'] || ''); } catch { /* nombre roto: sin nombre */ }
+          const name = await saveDrop(inboxDir, body, { name: wanted, type: ctype });
           if (name) saved.push(name);
         }
-        if (!saved.length) return json(res, 415, { ok: false, error: 'no-image' });
-        for (const name of saved) onImage?.(name);
+        if (!saved.length) return json(res, 400, { ok: false, error: 'empty' });
+        for (const name of saved) onFile?.(name);
         return json(res, 200, { ok: true, saved });
       }
 
@@ -266,4 +332,4 @@ function createUmbralServer({ inboxDir, basePort, onImage, outbox, thumb, onDeli
   });
 }
 
-module.exports = { createUmbralServer, tailnetIps };
+module.exports = { createUmbralServer, tailnetIps, cleanName };

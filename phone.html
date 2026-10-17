@@ -160,9 +160,9 @@
       <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 19V6"/><path d="m6 12 6-6 6 6"/>
       </svg>
-      <span>Elegir capturas</span>
-      <small>se env&iacute;an solas al elegirlas</small>
-      <input id="f" type="file" accept="image/*" multiple hidden>
+      <span>Elegir archivos</span>
+      <small>im&aacute;genes, PDF o lo que sea; se env&iacute;an solos al elegirlos</small>
+      <input id="f" type="file" multiple hidden>
     </label>
     <ul id="sent"></ul>
   </section>
@@ -269,7 +269,10 @@
       try {
         const r = await fetch('/drop', {
           method: 'POST',
-          headers: { 'content-type': file.type || 'application/octet-stream', ...auth() },
+          // El nombre viaja aparte y codificado (tildes): desde la 0.5 la PC
+          // guarda cada archivo con el suyo. Las imágenes van por la fecha.
+          headers: { 'content-type': file.type || 'application/octet-stream',
+                     'x-umbral-name': encodeURIComponent(file.name), ...auth() },
           body: file,
         });
         if (r.status === 401) pedirVinculo();

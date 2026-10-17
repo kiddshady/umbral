@@ -120,8 +120,9 @@
 }
 .ub-card:is(:hover, :focus-visible) .ub-card__time { opacity: 1; transform: none; }
 
-/* Para el celu: lo que ya bajó se apaga, lo que no es imagen es una ficha. */
-.ub-card--file { cursor: default; }
+/* Lo que no es imagen es una ficha (en las dos vistas desde la 0.5; un click
+   la abre con su programa). En Para el celu, lo que ya bajó se apaga. */
+.ub-card--file { cursor: pointer; }
 .ub-card img,
 .ub-file { transition: filter var(--ox-t-3) var(--ox-ease); }
 .ub-card.is-delivered img { filter: saturate(.5) brightness(.7); }

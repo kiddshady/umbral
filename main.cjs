@@ -2,7 +2,7 @@
 
 /* ═══════════════════════════════════════════════════════════════════════════
    UMBRAL — proceso principal
-   La puerta entre el teléfono y la UCX: servidor LAN, inbox de capturas,
+   La puerta entre el teléfono y la UCX: servidor LAN, lo que llega del celu,
    bandeja para el celu, tray y auto-update. La ventana es la de Onyx.
 
    ── La ventana sin un solo frame blanco ────────────────────────────────────
@@ -193,19 +193,19 @@ function lanIp() {
 // Inbox
 // ---------------------------------------------------------------------------
 
-async function imageMeta(name) {
+// Desde la 0.5 del celu llega cualquier archivo, no solo imágenes: `image`
+// dice si la galería lo muestra como foto o como ficha.
+async function inboxMeta(name) {
   const full = path.join(inboxDir, name);
   const st = await fsp.stat(full);
-  return { name, url: pathToFileURL(full).href, size: st.size, mtime: st.mtimeMs };
+  if (!st.isFile()) return null;
+  return { name, url: pathToFileURL(full).href, size: st.size, mtime: st.mtimeMs,
+    image: IMG_EXTS.has(path.extname(name).toLowerCase()) };
 }
 
-async function listImages() {
+async function listInbox() {
   const files = await fsp.readdir(inboxDir).catch(() => []);
-  const metas = [];
-  for (const f of files) {
-    if (!IMG_EXTS.has(path.extname(f).toLowerCase())) continue;
-    metas.push(await imageMeta(f).catch(() => null));
-  }
+  const metas = await Promise.all(files.map((f) => inboxMeta(f).catch(() => null)));
   return metas.filter(Boolean).sort((a, b) => b.mtime - a.mtime);
 }
 
@@ -353,7 +353,7 @@ function createWindow(state) {
   });
   mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
 
-  // Cerrar no cierra: esconde al tray y el servidor sigue recibiendo capturas.
+  // Cerrar no cierra: esconde al tray y el servidor sigue recibiendo.
   mainWindow.on('close', (e) => {
     if (!quitting) {
       e.preventDefault();
@@ -441,10 +441,36 @@ function createTray() {
 
 const safeJoin = (name) => path.join(inboxDir, path.basename(name));
 
-function copyImageFile(src) {
-  const img = nativeImage.createFromPath(src);
-  if (img.isEmpty()) return { ok: false };
-  clipboard.writeImage(img);
+// Copiar: una imagen va como imagen (se pega en cualquier lado). Lo demás va
+// como ARCHIVO, igual que un Ctrl+C en el Explorador: se pega en una carpeta,
+// en un mail o en Claude. Electron no escribe CF_HDROP, así que lo hace
+// Set-Clipboard; la ruta viaja por el entorno para no pelear con comillas.
+function copyFile(src) {
+  if (IMG_EXTS.has(path.extname(src).toLowerCase())) {
+    const img = nativeImage.createFromPath(src);
+    if (!img.isEmpty()) {
+      clipboard.writeImage(img);
+      return { ok: true, image: true };
+    }
+  }
+  if (!fs.existsSync(src)) return { ok: false };
+  return new Promise((resolve) => {
+    const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-Command',
+      'Set-Clipboard -LiteralPath $env:UMBRAL_COPIA'],
+      { windowsHide: true, env: { ...process.env, UMBRAL_COPIA: src } });
+    ps.on('error', () => resolve({ ok: false }));
+    ps.on('close', (code) => resolve({ ok: code === 0, image: false }));
+  });
+}
+
+// Abrir con el programa de cada archivo (el PDF en Quire, etc.). Si
+// shell.openPath no puede, el Explorador sí.
+async function openFile(src) {
+  if (!fs.existsSync(src)) return { ok: false };
+  // El humo no lanza programas de verdad: anota qué se habría abierto.
+  if (SMOKE) { (global.__umbralAbiertos ??= []).push(path.basename(src)); return { ok: true }; }
+  const err = await shell.openPath(src);
+  if (err) spawn('explorer.exe', [src], { detached: true, stdio: 'ignore' }).unref();
   return { ok: true };
 }
 
@@ -470,24 +496,26 @@ async function exportFile(src) {
   return { ok: true, name: path.basename(res.filePath) };
 }
 
-ipcMain.handle('images:list', () => listImages());
+ipcMain.handle('recibidas:list', () => listInbox());
 
-ipcMain.handle('images:copy', (_e, name) => copyImageFile(safeJoin(name)));
+ipcMain.handle('recibidas:copy', (_e, name) => copyFile(safeJoin(name)));
 
-ipcMain.handle('images:export', (_e, name) => exportFile(safeJoin(name)));
+ipcMain.handle('recibidas:open', (_e, name) => openFile(safeJoin(name)));
 
-ipcMain.handle('images:delete', async (_e, name) => {
+ipcMain.handle('recibidas:export', (_e, name) => exportFile(safeJoin(name)));
+
+ipcMain.handle('recibidas:delete', async (_e, name) => {
   await fsp.rm(safeJoin(name), { force: true });
   return { ok: true };
 });
 
-ipcMain.handle('images:clear', async () => {
+// La carpeta es solo de lo que llegó del celu: se vacía entera.
+ipcMain.handle('recibidas:clear', async () => {
   const files = await fsp.readdir(inboxDir).catch(() => []);
-  await Promise.all(
-    files
-      .filter((f) => IMG_EXTS.has(path.extname(f).toLowerCase()))
-      .map((f) => fsp.rm(path.join(inboxDir, f), { force: true }))
-  );
+  await Promise.all(files.map(async (f) => {
+    const full = path.join(inboxDir, f);
+    if ((await fsp.stat(full).catch(() => null))?.isFile()) await fsp.rm(full, { force: true });
+  }));
   return { ok: true };
 });
 
@@ -521,7 +549,9 @@ ipcMain.handle('outbox:addPaths', (_e, paths) => addToOutbox(argFiles(paths || [
 ipcMain.handle('outbox:remove', (_e, name) => outbox.remove(name));
 ipcMain.handle('outbox:clear', () => outbox.clear());
 
-ipcMain.handle('outbox:copy', (_e, name) => copyImageFile(outbox.full(name)));
+ipcMain.handle('outbox:copy', (_e, name) => copyFile(outbox.full(name)));
+
+ipcMain.handle('outbox:open', (_e, name) => openFile(outbox.full(name)));
 
 ipcMain.handle('outbox:export', (_e, name) => exportFile(outbox.full(name)));
 
@@ -617,9 +647,9 @@ app.whenReady().then(async () => {
   const { port } = await createUmbralServer({
     inboxDir,
     basePort: BASE_PORT,
-    onImage: async (name) => {
-      const meta = await imageMeta(name).catch(() => null);
-      if (meta) sendWin('image:new', meta);
+    onFile: async (name) => {
+      const meta = await inboxMeta(name).catch(() => null);
+      if (meta) sendWin('recibidas:new', meta);
     },
     outbox,
     thumb: makeThumb,

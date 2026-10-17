@@ -48,11 +48,16 @@ contextBridge.exposeInMainWorld('onyx', {
 });
 
 contextBridge.exposeInMainWorld('umbral', {
-  listImages: () => ipcRenderer.invoke('images:list'),
-  copyImage: (name) => ipcRenderer.invoke('images:copy', name),
-  exportImage: (name) => ipcRenderer.invoke('images:export', name),
-  deleteImage: (name) => ipcRenderer.invoke('images:delete', name),
-  clearAll: () => ipcRenderer.invoke('images:clear'),
+  // Lo que llegó del celu: imágenes y, desde la 0.5, cualquier archivo.
+  recibidas: {
+    list: () => ipcRenderer.invoke('recibidas:list'),
+    copy: (name) => ipcRenderer.invoke('recibidas:copy', name),
+    open: (name) => ipcRenderer.invoke('recibidas:open', name),
+    export: (name) => ipcRenderer.invoke('recibidas:export', name),
+    remove: (name) => ipcRenderer.invoke('recibidas:delete', name),
+    clear: () => ipcRenderer.invoke('recibidas:clear'),
+    onNew: (cb) => on('recibidas:new', cb),
+  },
   serverInfo: () => ipcRenderer.invoke('server:info'),
   qr: () => ipcRenderer.invoke('server:qr'),
   pair: {
@@ -62,7 +67,6 @@ contextBridge.exposeInMainWorld('umbral', {
     onDone: (cb) => on('pair:done', cb),
   },
   openInbox: (which) => ipcRenderer.invoke('inbox:open', which),
-  onNewImage: (cb) => on('image:new', cb),
   outbox: {
     list: () => ipcRenderer.invoke('outbox:list'),
     // File.path ya no existe desde Electron 32: la ruta real sale de webUtils
@@ -71,6 +75,7 @@ contextBridge.exposeInMainWorld('umbral', {
     remove: (name) => ipcRenderer.invoke('outbox:remove', name),
     clear: () => ipcRenderer.invoke('outbox:clear'),
     copy: (name) => ipcRenderer.invoke('outbox:copy', name),
+    open: (name) => ipcRenderer.invoke('outbox:open', name),
     export: (name) => ipcRenderer.invoke('outbox:export', name),
     onAdded: (cb) => on('outbox:added', cb),
     onDelivered: (cb) => on('outbox:delivered', cb),

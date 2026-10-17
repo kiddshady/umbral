@@ -21,7 +21,8 @@ const http = require('http');
 
 const ROOT = path.join(__dirname, '..');
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'umbral-humo-'));
-const PORT = 4790;
+// Ni el 4747 de la instalada ni el 4790, que es de Wisp.
+const PORT = 4757;
 process.env.UMBRAL_DATA = DIR;
 process.env.UMBRAL_PORT = String(PORT);
 process.env.UMBRAL_SMOKE = '1';
@@ -44,9 +45,9 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAFklEQVR
    y la lee de donde la guarda el main (vinculo.json en UMBRAL_DATA). */
 const llave = () => JSON.parse(fs.readFileSync(path.join(DIR, 'vinculo.json'), 'utf8')).llave;
 
-function request(method, p, body, { sinLlave = false, type = 'image/png' } = {}) {
+function request(method, p, body, { sinLlave = false, type = 'image/png', extra = {} } = {}) {
   return new Promise((resolve, reject) => {
-    const headers = body ? { 'content-type': type, 'content-length': body.length } : {};
+    const headers = body ? { 'content-type': type, 'content-length': body.length, ...extra } : { ...extra };
     if (!sinLlave) headers.authorization = `Bearer ${llave()}`;
     const req = http.request({ host: '127.0.0.1', port: PORT, method, path: p, headers }, (res) => {
       const chunks = [];
@@ -225,6 +226,30 @@ app.whenReady().then(async () => {
   await sleep(1200);
   ok('confirmar la borra de la galería y del disco', (await cards()) === 0 && fs.readdirSync(path.join(DIR, 'inbox')).length === 0);
   ok('y vuelve el vacío', await js(`!!document.querySelector('#view .ub-empty')`));
+
+  console.log('\n6-ter. Un PDF del celu (0.5)');
+  const PDF = Buffer.from('%PDF-1.4\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n');
+  const pdf = await request('POST', '/drop', PDF, { type: 'application/pdf', extra: { 'x-umbral-name': encodeURIComponent('Apunte de Tecnia ñ.pdf') } });
+  ok('POST /drop acepta un PDF', pdf.status === 200, `${pdf.status} ${pdf.body}`);
+  await sleep(900);
+  ok('entra a Recibidas como ficha, con su nombre', (await cards()) === 1
+    && (await js(`document.querySelector('#grid .ub-card--file .ub-file__name')?.textContent`)) === 'Apunte de Tecnia ñ.pdf');
+  ok('la ficha dice PDF', (await js(`document.querySelector('#grid .ub-file__ext')?.textContent`)) === 'PDF');
+  ok('el toast dice «Archivo recibido», sin miniatura',
+    await js(`[...document.querySelectorAll('.ox-toast')].some((t) => /Archivo recibido/.test(t.textContent) && !t.querySelector('.ub-toast-thumb'))`));
+  await js(`(() => { const c = document.querySelector('#grid > .ub-card'); const r = c.getBoundingClientRect();
+    c.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 20 })); })()`);
+  await sleep(300);
+  ok('su menú trae Abrir, Copiar, Exportar y Eliminar',
+    (await js(`[...document.querySelectorAll('.ox-menu .ox-menuitem')].map(b => b.textContent.trim()).join('|')`)) === 'Abrir|Copiar|Exportar|Eliminar');
+  key('Escape');
+  await sleep(400);
+  await tap('#grid > .ub-card');
+  await sleep(450);
+  ok('el click no abre el visor: lo abre con su programa',
+    !(await js(`!!document.querySelector('.ub-lightbox')`)) && (global.__umbralAbiertos || []).at(-1) === 'Apunte de Tecnia ñ.pdf',
+    JSON.stringify(global.__umbralAbiertos));
+  ok('el botón de la carpeta dice «lo recibido»', (await js(`document.getElementById('btn-folder').dataset.tip`)) === 'Abrir la carpeta de lo recibido');
 
   console.log('\n6-bis. La tarjeta de actualización');
   // Lo que manda updater.js: el humo no busca en GitHub, le pasa los estados.

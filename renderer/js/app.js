@@ -45,7 +45,7 @@ Icons.add({
    para pintarse. El proceso principal avisa lo que llega y lo que se baja. */
 
 const S = {
-  images: [],   // recibidas: { name, url, size, mtime } — la más nueva primero
+  inbox: [],    // recibidas: { name, url, size, mtime, image } — la más nueva primero
   out: [],      // para el celu: { name, url, size, mtime, image, delivered }
   url: '',
   qr: '',
@@ -57,11 +57,18 @@ const extOf = (n) => (n.includes('.') ? n.split('.').pop().slice(0, 5).toUpperCa
 
 /* ══ Acciones ════════════════════════════════════════════════════════════════ */
 
+// Una imagen se copia como imagen; lo demás, como archivo (se pega en una
+// carpeta o en Claude, como un Ctrl+C del Explorador).
 async function copiar(fn) {
   const res = await attempt(fn, { errorTitle: 'No se pudo copiar' });
   if (!res) return;
-  if (res.ok) Toast.show({ title: 'Copiada al portapapeles', icon: 'copy', duration: 2600 });
-  else Toast.error('No se pudo copiar', 'El archivo no es una imagen que el portapapeles entienda.');
+  if (res.ok) Toast.show({ title: res.image ? 'Copiada al portapapeles' : 'Copiado al portapapeles', icon: 'copy', duration: 2600 });
+  else Toast.error('No se pudo copiar', 'Windows no dejó poner el archivo en el portapapeles.');
+}
+
+async function abrir(fn) {
+  const res = await attempt(fn, { errorTitle: 'No se pudo abrir' });
+  if (res && !res.ok) Toast.error('No se pudo abrir', 'El archivo ya no está en la carpeta.');
 }
 
 async function exportar(fn, femenino = true) {
@@ -71,9 +78,9 @@ async function exportar(fn, femenino = true) {
   else Toast.error('No se pudo exportar', 'No se pudo escribir la copia en esa carpeta.');
 }
 
-function removeImage(name) {
-  S.images = S.images.filter((i) => i.name !== name);
-  api.deleteImage(name);
+function removeIn(name) {
+  S.inbox = S.inbox.filter((i) => i.name !== name);
+  api.recibidas.remove(name);
   sync('recibidas');
 }
 
@@ -83,9 +90,9 @@ function removeOut(name) {
   sync('celu');
 }
 
-function addImage(img) {
-  if (S.images.some((i) => i.name === img.name)) return;
-  S.images.unshift(img);
+function addIn(item) {
+  if (S.inbox.some((i) => i.name === item.name)) return;
+  S.inbox.unshift(item);
   sync('recibidas');
 }
 
@@ -112,7 +119,8 @@ async function addFiles(files) {
 
 /* ══ Menús ═══════════════════════════════════════════════════════════════════
    El mismo menú sirve para la miniatura y para la foto agrandada. Se abre en
-   el cursor: el ancla es un punto invisible ahí. */
+   el cursor: el ancla es un punto invisible ahí. Lo que no es imagen suma
+   Abrir arriba de todo: no tiene visor, se abre con su programa. */
 
 function menuAt(x, y, items) {
   let p = $('ub-anchor');
@@ -129,18 +137,22 @@ function menuAt(x, y, items) {
   return Menu.show(p, items);
 }
 
-function menuIn(img) {
+const itemAbrir = (fn) => ({ label: 'Abrir', icon: 'file', onSelect: () => abrir(fn) });
+
+function menuIn(item) {
   return [
-    { label: 'Copiar', icon: 'copy', onSelect: () => copiar(() => api.copyImage(img.name)) },
-    { label: 'Exportar', icon: 'exportar', onSelect: () => exportar(() => api.exportImage(img.name)) },
+    ...(item.image ? [] : [itemAbrir(() => api.recibidas.open(item.name))]),
+    { label: 'Copiar', icon: 'copy', onSelect: () => copiar(() => api.recibidas.copy(item.name)) },
+    { label: 'Exportar', icon: 'exportar', onSelect: () => exportar(() => api.recibidas.export(item.name), item.image) },
     { sep: true },
-    { label: 'Eliminar', icon: 'trash', danger: true, onSelect: () => { closeLightbox(); removeImage(img.name); } },
+    { label: 'Eliminar', icon: 'trash', danger: true, onSelect: () => { closeLightbox(); removeIn(item.name); } },
   ];
 }
 
 function menuOut(item) {
   return [
-    ...(item.image ? [{ label: 'Copiar', icon: 'copy', onSelect: () => copiar(() => api.outbox.copy(item.name)) }] : []),
+    ...(item.image ? [] : [itemAbrir(() => api.outbox.open(item.name))]),
+    { label: 'Copiar', icon: 'copy', onSelect: () => copiar(() => api.outbox.copy(item.name)) },
     { label: 'Exportar', icon: 'exportar', onSelect: () => exportar(() => api.outbox.export(item.name), item.image) },
     { sep: true },
     { label: 'Quitar de la bandeja', icon: 'quitar', danger: true, onSelect: () => { closeLightbox(); removeOut(item.name); } },
@@ -184,10 +196,18 @@ function closeLightbox() {
    que llega en vivo entra, lo que se borra se esfuma desde donde estaba, y el
    resto se corre a su lugar nuevo. */
 
-function cardIn(img) {
-  return `<figure class="ub-card" tabindex="0">
-    <img src="${esc(img.url)}" alt="" loading="lazy" draggable="false">
-    <figcaption class="ub-card__time">${esc(fmtWhen(img.mtime))}</figcaption>
+// La foto, o la ficha con la extensión y el nombre: igual en las dos vistas.
+const cardBody = (item) => (item.image
+  ? `<img src="${esc(item.url)}" alt="" loading="lazy" draggable="false">`
+  : `<div class="ub-file">${Icons.svg('file')}
+      <span class="ub-file__ext">${esc(extOf(item.name))}</span>
+      <span class="ub-file__name ox-truncate ox-copyable">${esc(item.name)}</span>
+    </div>`);
+
+function cardIn(item) {
+  return `<figure class="ub-card${item.image ? '' : ' ub-card--file'}" tabindex="0">
+    ${cardBody(item)}
+    <figcaption class="ub-card__time">${esc(fmtWhen(item.mtime))}</figcaption>
   </figure>`;
 }
 
@@ -197,14 +217,8 @@ const pillHTML = (item) => (item.delivered
 
 function cardOut(item) {
   const cls = `ub-card${item.image ? '' : ' ub-card--file'}${item.delivered ? ' is-delivered' : ''}`;
-  const body = item.image
-    ? `<img src="${esc(item.url)}" alt="" loading="lazy" draggable="false">`
-    : `<div class="ub-file">${Icons.svg('file')}
-        <span class="ub-file__ext">${esc(extOf(item.name))}</span>
-        <span class="ub-file__name ox-truncate ox-copyable">${esc(item.name)}</span>
-      </div>`;
   return `<figure class="${cls}" tabindex="0">
-    ${body}
+    ${cardBody(item)}
     <span class="ub-pill" data-delivered="${item.delivered ? 1 : 0}">${pillHTML(item)}</span>
     <figcaption class="ub-card__time">${esc(fmtWhen(item.mtime))}</figcaption>
   </figure>`;
@@ -224,13 +238,14 @@ function updateOut(el, { it }) {
 
 const VIEWS = {
   recibidas: {
-    list: () => S.images,
+    list: () => S.inbox,
     card: cardIn,
     menu: menuIn,
+    open: (name) => api.recibidas.open(name),
     empty: () => `
       <div class="ox-empty ub-empty">${Icons.svg('arch')}
         <div class="ox-empty__title">El umbral está despejado</div>
-        <div class="ox-empty__text">Compartí una captura desde el teléfono y aparece acá.</div>
+        <div class="ox-empty__text">Compartí imágenes o archivos desde el teléfono y aparecen acá.</div>
         ${S.url ? `<span class="ub-empty__addr ox-copyable">${esc(S.url)}</span>` : ''}
       </div>`,
   },
@@ -238,6 +253,7 @@ const VIEWS = {
     list: () => S.out,
     card: cardOut,
     menu: menuOut,
+    open: (name) => api.outbox.open(name),
     update: updateOut,
     empty: () => `
       <div class="ox-empty ub-empty">${Icons.svg('phoneDown')}
@@ -270,10 +286,12 @@ function view(v) {
    acumularía un escuchador por visita. */
 function wireGrid(grid, v) {
   const itemOf = (card) => card && VIEWS[v].list().find((i) => i.name === card.dataset.key);
+  // Una imagen se agranda en el visor; lo demás se abre con su programa.
   const open = (card) => {
     const it = itemOf(card);
-    if (!it || (v === 'celu' && !it.image)) return;
-    openLightbox(it.url, () => VIEWS[v].menu(it));
+    if (!it) return;
+    if (it.image) openLightbox(it.url, () => VIEWS[v].menu(it));
+    else abrir(() => VIEWS[v].open(it.name));
   };
   grid.addEventListener('click', (e) => open(e.target.closest('.ub-card')));
   grid.addEventListener('contextmenu', (e) => {
@@ -318,7 +336,7 @@ let syncSeg = () => {};
 
 function updateChrome() {
   const v = Router.name;
-  numero($('n-in'), S.images.length);
+  numero($('n-in'), S.inbox.length);
   numero($('n-out'), S.out.length);
   $('n-out').classList.toggle('is-hot', S.out.some((i) => !i.delivered));
 
@@ -327,13 +345,13 @@ function updateChrome() {
   sweep.dataset.tip = sweep.disabled ? 'Quitar las ya bajadas: ninguna bajó todavía' : 'Quitar las ya bajadas';
 
   const nuke = $('btn-nuke');
-  const vacia = v === 'celu' ? !S.out.length : !S.images.length;
+  const vacia = v === 'celu' ? !S.out.length : !S.inbox.length;
   nuke.disabled = vacia;
   nuke.dataset.tip = v === 'celu'
     ? (vacia ? 'La bandeja ya está vacía' : 'Vaciar la bandeja')
     : (vacia ? 'No hay nada que purgar' : 'Purgar todo');
 
-  $('btn-folder').dataset.tip = v === 'celu' ? 'Abrir la carpeta de la bandeja' : 'Abrir la carpeta de las capturas';
+  $('btn-folder').dataset.tip = v === 'celu' ? 'Abrir la carpeta de la bandeja' : 'Abrir la carpeta de lo recibido';
   $('out-tools').hidden = v !== 'celu';
 
   // El segmentado sigue a la vista también cuando cambia sola (arrastrar, Enviar a).
@@ -520,19 +538,19 @@ function closeQr() {
 
 async function purgar() {
   const celu = Router.name === 'celu';
-  const n = celu ? S.out.length : S.images.length;
+  const n = celu ? S.out.length : S.inbox.length;
   if (!n) return;
   const okay = await Modal.confirm(celu
     ? { title: 'Vaciar la bandeja', sub: `Se van a quitar ${plural(n, 'archivo', 'archivos')} y el celu deja de verlos. Los originales en tu PC no se tocan.`, confirmLabel: 'Vaciar', danger: true }
-    : { title: 'Purga total', sub: `Se van a eliminar ${plural(n, 'captura', 'capturas')}. No hay vuelta atrás.`, confirmLabel: 'Purgar', danger: true });
+    : { title: 'Purga total', sub: `Se van a eliminar ${plural(n, 'archivo recibido', 'archivos recibidos')}. No hay vuelta atrás.`, confirmLabel: 'Purgar', danger: true });
   if (!okay) return;
   if (celu) {
     S.out = [];
     await attempt(() => api.outbox.clear(), { errorTitle: 'No se pudo vaciar' });
     Toast.show({ title: 'Bandeja vacía', icon: 'check', duration: 2600 });
   } else {
-    S.images = [];
-    await attempt(() => api.clearAll(), { errorTitle: 'No se pudo purgar' });
+    S.inbox = [];
+    await attempt(() => api.recibidas.clear(), { errorTitle: 'No se pudo purgar' });
     Toast.show({ title: 'Umbral despejado', icon: 'check', duration: 2600 });
   }
   // Las tarjetas se esfuman y recién ahí entra el vacío.
@@ -683,8 +701,8 @@ async function boot() {
   try {
     const info = await api.serverInfo();
     S.url = info.url || '';
-    [S.images, S.out, settings] = await Promise.all([
-      api.listImages(), api.outbox.list(), window.onyx.settings.get().catch(() => ({})),
+    [S.inbox, S.out, settings] = await Promise.all([
+      api.recibidas.list(), api.outbox.list(), window.onyx.settings.get().catch(() => ({})),
     ]);
     S.qr = await api.qr().catch(() => '');
   } catch (err) {
@@ -700,12 +718,14 @@ async function boot() {
   updateChrome();
   S.booting = false;
 
-  api.onNewImage((img) => {
-    addImage(img);
-    const t = Toast.show({ title: 'Captura recibida', text: img.name, icon: 'download', duration: 3200 });
+  api.recibidas.onNew((item) => {
+    addIn(item);
+    const t = Toast.show({ title: item.image ? 'Imagen recibida' : 'Archivo recibido', text: item.name,
+      icon: item.image ? 'download' : 'file', duration: 3200 });
+    if (!item.image) return;
     const thumb = document.createElement('img');
     thumb.className = 'ub-toast-thumb';
-    thumb.src = img.url;
+    thumb.src = item.url;
     thumb.alt = '';
     t.el.querySelector(':scope > .ox-icon')?.replaceWith(thumb);
   });
