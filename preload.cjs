@@ -88,5 +88,8 @@ contextBridge.exposeInMainWorld('umbral', {
     open: () => ipcRenderer.invoke('update:open'),
     onState: (cb) => on('update:state', cb),
   },
+  // El Borrador: texto plano al portapapeles, y el aviso de que se la llamó con el atajo.
+  copyText: (text) => ipcRenderer.invoke('texto:copy', text),
+  onShortcut: (cb) => on('atajo:mostrar', cb),
   ready: () => ipcRenderer.send('renderer:ready'),
 });

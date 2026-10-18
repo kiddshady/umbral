@@ -26,7 +26,7 @@
                `backgroundColor` de la ventana. En la 33 y anteriores es blanco.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const { app, BrowserWindow, screen, ipcMain, Tray, Menu, shell, clipboard, nativeImage, dialog } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, Tray, Menu, shell, clipboard, nativeImage, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -45,6 +45,9 @@ const updater = require('./updater');
 const BG = '#0b0a0f';
 
 const BASE_PORT = Number(process.env.UMBRAL_PORT) || 4747;
+
+// El atajo global: trae Umbral desde cualquier lado, y si ya está al frente la esconde.
+const HOTKEY = 'Control+Shift+U';
 const IMG_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 
 /* El humo (test/renderer.test.cjs) arranca este mismo archivo con una carpeta
@@ -380,6 +383,19 @@ function showMain() {
   mainWindow.focus();
 }
 
+function toggleMain() {
+  if (!mainWindow) return;
+  if (placed && mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused()) return mainWindow.hide();
+  showMain();
+  sendWin('atajo:mostrar');
+}
+
+function registerHotkey() {
+  let ok = false;
+  try { ok = globalShortcut.register(HOTKEY, toggleMain); } catch { /* inválido */ }
+  if (!ok) console.error(`[atajo] ${HOTKEY} ya lo tiene otra app`);
+}
+
 // El ítem de actualización cambia con el estado: Umbral pasa días escondida
 // en el tray y ese menú es lo único que se ve de ella.
 function updateMenuItem() {
@@ -399,7 +415,7 @@ function refreshTrayMenu() {
   if (menuKey === lastMenuKey) return; // el progreso llega muchas veces por segundo
   lastMenuKey = menuKey;
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Mostrar Umbral', click: showMain },
+    { label: 'Mostrar Umbral', accelerator: HOTKEY, registerAccelerator: false, click: showMain },
     item,
     { type: 'separator' },
     { label: 'Abrir al iniciar Windows', type: 'checkbox', checked: alIniciar, enabled: app.isPackaged,
@@ -593,6 +609,14 @@ ipcMain.handle('outbox:paste', async () => {
   return { ok: true, items: [outMeta(m)] };
 });
 
+// El Borrador copia texto plano: lo que se pegue después sale tal cual.
+ipcMain.handle('texto:copy', (_e, text) => {
+  // El humo no le pisa el portapapeles a Fran: anota qué se habría copiado.
+  if (SMOKE) { global.__umbralCopiado = String(text ?? ''); return true; }
+  clipboard.writeText(String(text ?? ''));
+  return true;
+});
+
 ipcMain.on('renderer:ready', () => {
   rendererReady = true;
   if (pendingArgs.length) {
@@ -668,10 +692,12 @@ app.whenReady().then(async () => {
   // otra carpeta, la entrada vuelve a apuntar bien.
   setLoginItem((await store.loadSettings().catch(() => ({}))).abrirAlIniciar !== false);
   createTray();
+  registerHotkey();
   ensureSendToShortcut();
 });
 
 app.on('before-quit', () => { quitting = true; });
+app.on('will-quit', () => globalShortcut.unregisterAll());
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

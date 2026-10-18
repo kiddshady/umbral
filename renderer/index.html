@@ -74,6 +74,7 @@
     <div class="ox-segmented" id="seg">
       <button class="ox-segmented__opt is-active" data-value="recibidas">Recibidas <span class="ub-count" id="n-in"></span></button>
       <button class="ox-segmented__opt" data-value="celu">Para el celu <span class="ub-count" id="n-out"></span></button>
+      <button class="ox-segmented__opt" data-value="borrador">Borrador</button>
     </div>
 
     <span class="ox-vr ub-bar__sep"></span>
@@ -92,13 +93,14 @@
       <button class="ox-iconbtn" id="btn-sweep" data-tip="Quitar las ya bajadas" data-tip-side="bottom"><i data-icon="sweep"></i></button>
     </div>
 
-    <div class="ub-size" data-tip="Tamaño de las miniaturas" data-tip-side="bottom">
+    <!-- Las miniaturas, la carpeta y la purga no tienen sentido en el Borrador. -->
+    <div class="ub-size ub-bar__group ox-plegable--ancho" id="size-tools" data-tip="Tamaño de las miniaturas" data-tip-side="bottom">
       <i data-icon="sizeSm"></i>
       <input type="range" class="ox-slider" id="thumb-size" min="150" max="420" step="10" aria-label="Tamaño de las miniaturas">
       <i data-icon="sizeLg"></i>
     </div>
 
-    <div class="ub-bar__group">
+    <div class="ub-bar__group ox-plegable--ancho" id="files-tools">
       <button class="ox-iconbtn" id="btn-folder" data-tip="Abrir la carpeta" data-tip-side="bottom"><i data-icon="folder"></i></button>
       <button class="ox-iconbtn ub-nuke" id="btn-nuke" data-tip="Purgar todo" data-tip-side="bottom"><i data-icon="nuke"></i></button>
     </div>

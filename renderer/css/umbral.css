@@ -339,3 +339,34 @@
 .ub-upd__x { margin: -4px -4px 0 0; }
 .ub-upd .ox-meter { margin-top: var(--ox-3); }
 .ub-upd__acts { display: flex; justify-content: flex-end; gap: var(--ox-2); margin-top: var(--ox-3); }
+
+/* ── El Borrador ──────────────────────────────────────────────────────────────
+   Un campo que ocupa la vista entera y, abajo, el pie con el conteo y las dos
+   acciones. No se estira a mano: ya llena el lugar. */
+.ub-borr {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ox-3);
+  min-height: 0;
+  padding-bottom: var(--ox-5);
+}
+.ub-borr__text {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  padding: var(--ox-3) var(--ox-4);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  transition: box-shadow var(--ox-t-2) var(--ox-ease-soft),
+              background-color var(--ox-t-2) var(--ox-ease-soft),
+              color var(--ox-t-2) var(--ox-ease-soft);
+}
+/* Limpiar: el texto se funde por color antes de vaciarse. */
+.ub-borr__text.is-limpiando { color: transparent; }
+.ub-borr__foot { display: flex; align-items: center; gap: var(--ox-2); min-height: 28px; }
+.ub-borr__info {
+  font-size: var(--ox-fs-11);
+  color: var(--ox-text-4);
+  font-variant-numeric: tabular-nums;
+}

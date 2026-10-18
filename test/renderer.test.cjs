@@ -68,7 +68,7 @@ app.whenReady().then(async () => {
   for (let i = 0; i < 100 && !win; i++) { win = BrowserWindow.getAllWindows()[0] || null; if (!win) await sleep(50); }
   if (!win) return bail('la ventana no apareció');
   const errores = [];
-  win.webContents.on('console-message', (e) => { if (e.level >= 2) errores.push(`${e.level}: ${e.message}`); });
+  win.webContents.on('console-message', (e) => { if (e.level >= 2 || e.level === 'warning' || e.level === 'error') errores.push(`${e.level}: ${e.message}`); });
   await new Promise((r) => (win.webContents.isLoading() ? win.webContents.once('did-finish-load', r) : r()));
   await sleep(1800);
 
@@ -375,7 +375,57 @@ app.whenReady().then(async () => {
   ok('la ventana tiene el foco (si no, no hay anillos que medir)', await js('document.hasFocus()'));
   await request('POST', '/drop', PNG);
   await sleep(900);
-  for (const v of ['recibidas', 'celu']) {
+
+  // Antes de la auditoría de anillos, que apaga las transiciones para medir.
+  console.log('\n7-bis. Borrador');
+  await tap('.ox-segmented__opt[data-value="borrador"]');
+  await sleep(700);
+  const b0 = await js(`(() => {
+    const ta = document.getElementById('borr'), r = ta.getBoundingClientRect();
+    const seg = document.getElementById('seg').getBoundingClientRect();
+    const foot = document.querySelector('.ub-borr__foot').getBoundingClientRect();
+    return { focus: document.activeElement === ta, h: r.height, left: r.left, seg: seg.left, right: innerWidth - r.right,
+      footBottom: innerHeight - foot.bottom, copyOff: document.getElementById('borr-copy').disabled,
+      sizeHidden: document.getElementById('size-tools').hidden, filesHidden: document.getElementById('files-tools').hidden,
+      info: document.getElementById('borr-info').textContent };
+  })()`);
+  ok('el campo tiene el foco al entrar', b0.focus);
+  ok('el campo llena la vista (alto > 400 px)', b0.h > 400, `alto ${b0.h}`);
+  ok('arranca en la misma columna que el segmentado', Math.abs(b0.left - b0.seg) < 1, `${b0.left} vs ${b0.seg}`);
+  ok('la sangría derecha es la misma que la izquierda', Math.abs(b0.right - b0.left) < 1, `${b0.right} vs ${b0.left}`);
+  ok('el pie queda dentro de la ventana', b0.footBottom >= 8, `${b0.footBottom} px`);
+  ok('vacío: Copiar todo apagado y avisa que no se guarda', b0.copyOff && /no se guarda/i.test(b0.info), b0.info);
+  ok('miniaturas, carpeta y purga plegadas', b0.sizeHidden && b0.filesHidden);
+
+  const TXT = 'git push origin main\nhttps://ejemplo.com/ñandú';
+  await js(`(() => { const ta = document.getElementById('borr'); ta.value = ${JSON.stringify(TXT)};
+    ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await sleep(450);
+  const info = await js(`document.getElementById('borr-info').textContent`);
+  ok('cuenta caracteres y líneas', /2 líneas/.test(info), info);
+  await tap('#borr-copy');
+  await sleep(250);
+  ok('Copiar todo manda el texto entero', global.__umbralCopiado === TXT, JSON.stringify(global.__umbralCopiado));
+
+  await tap('.ox-segmented__opt[data-value="celu"]');
+  await sleep(600);
+  await tap('.ox-segmented__opt[data-value="borrador"]');
+  await sleep(600);
+  ok('el texto sobrevive a cambiar de vista', (await js(`document.getElementById('borr').value`)) === TXT);
+
+  await tap('#borr-clear');
+  await sleep(70);
+  const medio = await js(`(() => { const ta = document.getElementById('borr');
+    return { limpiando: ta.classList.contains('is-limpiando'), alfa: getComputedStyle(ta).color }; })()`);
+  ok('al limpiar, el texto se funde (a mitad de camino no es ni opaco ni invisible)',
+    medio.limpiando && /\/ 0\.\d|, 0\.\d+\)/.test(medio.alfa), medio.alfa);
+  await sleep(700);   // con la máquina cargada, el temporizador de 180 ms llega tarde
+  ok('Limpiar deja el campo vacío', (await js(`document.getElementById('borr').value`)) === '');
+  ok('el toast trae Deshacer', await tap('.ox-toast__action'));
+  await sleep(300);
+  ok('Deshacer devuelve el texto', (await js(`document.getElementById('borr').value`)) === TXT);
+
+  for (const v of ['recibidas', 'celu', 'borrador']) {
     await tap(`.ox-segmented__opt[data-value="${v}"]`);
     await sleep(700);
     const cortes = await js(AUDITAR_ANILLOS);

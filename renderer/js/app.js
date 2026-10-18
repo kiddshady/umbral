@@ -1,7 +1,8 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    UMBRAL — renderer
-   Dos vistas: Recibidas (teléfono → PC) y Para el celu (PC → teléfono). Las
-   piezas son de Onyx: el router hace el fundido entre las dos, reconcile()
+   Tres vistas: Recibidas (teléfono → PC), Para el celu (PC → teléfono) y el
+   Borrador, un texto de paso que vive solo en memoria. Las piezas son de
+   Onyx: el router hace el fundido entre ellas, reconcile()
    pone la galería al día tarjeta por tarjeta, y menú, modal, toast y tooltip
    son los overlays del framework. Lo propio de Umbral es el visor, el QR, el
    velo de arrastrar y la tarjeta de actualización.
@@ -10,7 +11,7 @@
 import { Icons } from './icons.js';
 import { Tooltip, Toast, Menu, Modal } from './overlays.js';
 import Router from './router.js';
-import { initClickFlash, initScrollFades, raf2, bindSwitcher, exit, swap, numero, valor, reconcile, stagger, deslizarAlto } from './motion.js';
+import { initClickFlash, initScrollFades, raf2, bindSwitcher, exit, swap, numero, valor, frase, reconcile, stagger, deslizarAlto } from './motion.js';
 import { esc, paint, mark, attempt, colorToken } from './ui.js';
 import { fmtClock, plural, locale } from './format.js';
 
@@ -50,6 +51,10 @@ const S = {
   url: '',
   qr: '',
   booting: true,
+  // El Borrador: a propósito no se guarda en disco. Sobrevive a esconder la
+  // ventana al tray (el renderer sigue vivo) y se pierde al salir de Umbral.
+  borrador: '',
+  borradorSel: null,   // { start, end, scroll } al irse de la vista, para volver al mismo lugar
 };
 
 const fmtWhen = (ms) => `${fmtClock(ms)} · ${new Date(ms).toLocaleDateString(locale.tag, { day: '2-digit', month: '2-digit' })}`;
@@ -312,6 +317,93 @@ function wireGrid(grid, v) {
   });
 }
 
+/* ══ El Borrador ═════════════════════════════════════════════════════════════
+   Una instancia intermedia para copiar y pegar: un comando, un link, unas
+   palabras. Se escribe, se copia y se tira. Limpiar no pregunta: el toast
+   trae Deshacer por si fue sin querer. */
+
+const borradorInfo = () => {
+  const n = S.borrador.length;
+  if (!n) return 'No se guarda: se borra al salir de Umbral';
+  const lineas = S.borrador.split('\n').length;
+  return `${plural(n, 'carácter', 'caracteres')}${lineas > 1 ? ` · ${plural(lineas, 'línea', 'líneas')}` : ''}`;
+};
+
+function syncBorrador() {
+  const vacio = !S.borrador;
+  const copy = $('borr-copy');
+  const clear = $('borr-clear');
+  if (!copy) return;
+  copy.disabled = clear.disabled = vacio;
+  copy.dataset.tip = vacio ? 'No hay nada que copiar' : 'Copiar todo el texto';
+  clear.dataset.tip = vacio ? 'Ya está vacío' : 'Borrar todo el texto';
+  frase($('borr-info'), esc(borradorInfo()));
+}
+
+function viewBorrador() {
+  paint(`<div class="ub-borr ox-grow">
+    <textarea class="ox-textarea ox-textarea--mono ub-borr__text" id="borr" spellcheck="false"
+      placeholder="Pegá o escribí algo para tenerlo a mano un rato: un comando, un link, unas palabras."></textarea>
+    <div class="ub-borr__foot">
+      <span class="ub-borr__info" id="borr-info"></span>
+      <div class="ox-spacer"></div>
+      <button class="ox-btn ox-btn--ghost ox-btn--sm" id="borr-clear"><i data-icon="trash"></i> Limpiar</button>
+      <button class="ox-btn ox-btn--secondary ox-btn--sm" id="borr-copy"><i data-icon="copy"></i> Copiar todo</button>
+    </div>
+  </div>`);
+  const ta = $('borr');
+  Icons.mount(ta.parentElement);
+  ta.value = S.borrador;
+  syncBorrador();
+
+  ta.addEventListener('input', () => { S.borrador = ta.value; syncBorrador(); });
+  $('borr-copy').addEventListener('click', copiarBorrador);
+  $('borr-clear').addEventListener('click', limpiarBorrador);
+  Router.onLeave(() => { S.borradorSel = { start: ta.selectionStart, end: ta.selectionEnd, scroll: ta.scrollTop }; });
+
+  // El foco se pone al navegar: se vuelve al mismo lugar donde estaba el cursor.
+  const sel = S.borradorSel;
+  ta.focus({ preventScroll: true });
+  if (sel) { ta.setSelectionRange(sel.start, sel.end); ta.scrollTop = sel.scroll; }
+  else ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+
+async function copiarBorrador() {
+  if (!S.borrador) return;
+  const ok = await attempt(() => api.copyText(S.borrador), { errorTitle: 'No se pudo copiar' });
+  if (ok) Toast.show({ title: 'Copiado al portapapeles', icon: 'copy', duration: 2200 });
+}
+
+/* El texto se funde por color, no por opacidad (con opacity el campo sube a
+   una capa propia y pierde ClearType: un «brillo» al terminar). Recién
+   esfumado se vacía el campo. */
+function limpiarBorrador() {
+  if (!S.borrador) return;
+  const antes = S.borrador;
+  const sel = S.borradorSel;
+  S.borrador = '';
+  S.borradorSel = null;
+  const ta = $('borr');
+  if (ta) {
+    ta.classList.add('is-limpiando');
+    setTimeout(() => {
+      if (!ta.isConnected) return;
+      ta.value = S.borrador;
+      ta.classList.remove('is-limpiando');
+      ta.focus({ preventScroll: true });
+    }, 180);
+  }
+  syncBorrador();
+  Toast.show({ title: 'Borrador limpio', icon: 'trash', duration: 5200, action: { label: 'Deshacer', run: () => {
+    if (S.borrador) return;   // ya escribiste algo nuevo: no se pisa
+    S.borrador = antes;
+    S.borradorSel = sel;
+    const t = $('borr');
+    if (t) { t.value = antes; t.focus({ preventScroll: true }); }
+    syncBorrador();
+  } } });
+}
+
 /* Lo que cambió en una vista: si es la que se ve, se pone al día en el lugar;
    si pasa de vacía a llena (o al revés), se repinta con fundido. La otra se
    pinta con lo último la próxima vez que se entre. */
@@ -344,6 +436,10 @@ function updateChrome() {
   sweep.disabled = !S.out.some((i) => i.delivered);
   sweep.dataset.tip = sweep.disabled ? 'Quitar las ya bajadas: ninguna bajó todavía' : 'Quitar las ya bajadas';
 
+  // El Borrador no tiene miniaturas, ni carpeta, ni nada que purgar.
+  $('size-tools').hidden = v === 'borrador';
+  $('files-tools').hidden = v === 'borrador';
+
   const nuke = $('btn-nuke');
   const vacia = v === 'celu' ? !S.out.length : !S.inbox.length;
   nuke.disabled = vacia;
@@ -374,6 +470,7 @@ function wireChrome() {
   $('btn-qr').addEventListener('click', toggleQr);
   $('btn-folder').addEventListener('click', () => api.openInbox(Router.name === 'celu' ? 'outbox' : 'inbox'));
   $('btn-nuke').addEventListener('click', purgar);
+  api.onShortcut(() => { if (Router.name === 'borrador') $('borr')?.focus({ preventScroll: true }); });
   $('btn-add').addEventListener('click', () => $('file-pick').click());
   $('file-pick').addEventListener('change', (e) => {
     const files = [...e.target.files];
@@ -537,6 +634,7 @@ function closeQr() {
 /* ── Purga ──────────────────────────────────────────────────────────────── */
 
 async function purgar() {
+  if (!VIEWS[Router.name]) return;   // en el Borrador no hay nada que purgar
   const celu = Router.name === 'celu';
   const n = celu ? S.out.length : S.inbox.length;
   if (!n) return;
@@ -592,6 +690,8 @@ function wireDrop() {
     if (--depth <= 0) { depth = 0; hide(); }
   });
   document.addEventListener('drop', (e) => {
+    // Texto arrastrado al Borrador: que lo suelte el propio campo.
+    if (!isFiles(e) && e.target.closest?.('textarea')) return;
     e.preventDefault();   // sin esto Electron navega al archivo soltado
     depth = 0;
     hide();
@@ -695,7 +795,7 @@ async function boot() {
   initScrollFades();
   syncWindowColor();
   $('srv-mark').outerHTML = mark('running');
-  Router.define({ recibidas: () => view('recibidas'), celu: () => view('celu') }, $('view'));
+  Router.define({ recibidas: () => view('recibidas'), celu: () => view('celu'), borrador: viewBorrador }, $('view'));
 
   let settings = {};
   try {
