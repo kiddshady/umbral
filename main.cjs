@@ -24,15 +24,17 @@
                el flash vuelve de forma intermitente.
    · Electron ≥ 40 → el frame fantasma de minimizar→restaurar se pinta con el
                `backgroundColor` de la ventana. En la 33 y anteriores es blanco.
+   · Electron 44 → el `clipboard` del main es el de la web: async, sin
+               writeImage/readImage/readBuffer. Imágenes con ClipboardItem.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const { app, BrowserWindow, screen, ipcMain, Tray, Menu, shell, clipboard, nativeImage, dialog, globalShortcut } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, Tray, Menu, shell, clipboard, ClipboardItem, nativeImage, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
 const { spawn } = require('child_process');
-const { pathToFileURL } = require('url');
+const { pathToFileURL, fileURLToPath } = require('url');
 const QRCode = require('qrcode');
 const { createUmbralServer } = require('./server');
 const { createOutbox } = require('./outbox');
@@ -461,11 +463,14 @@ const safeJoin = (name) => path.join(inboxDir, path.basename(name));
 // como ARCHIVO, igual que un Ctrl+C en el Explorador: se pega en una carpeta,
 // en un mail o en Claude. Electron no escribe CF_HDROP, así que lo hace
 // Set-Clipboard; la ruta viaja por el entorno para no pelear con comillas.
-function copyFile(src) {
+// La imagen pasa por nativeImage para que un JPEG o un WebP salgan como PNG,
+// el único formato de imagen que el portapapeles de Electron 44 escribe.
+async function copyFile(src) {
   if (IMG_EXTS.has(path.extname(src).toLowerCase())) {
     const img = nativeImage.createFromPath(src);
     if (!img.isEmpty()) {
-      clipboard.writeImage(img);
+      const png = img.toPNG();
+      await clipboard.write([new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) })]);
       return { ok: true, image: true };
     }
   }
@@ -572,24 +577,32 @@ ipcMain.handle('outbox:open', (_e, name) => openFile(outbox.full(name)));
 ipcMain.handle('outbox:export', (_e, name) => exportFile(outbox.full(name)));
 
 // Archivos copiados (Ctrl+C en el Explorador, o ShareX, que deja el archivo
-// y no la imagen). Electron no lee CF_HDROP: FileNameW es instantáneo pero
-// trae solo el primero, así que la lista completa sale de Get-Clipboard.
-function clipboardFiles() {
-  let first = '';
-  try { first = clipboard.readBuffer('FileNameW').toString('utf16le').replace(/\0.*$/s, ''); } catch {}
-  if (!first) return Promise.resolve([]);
-  return new Promise((resolve) => {
-    const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-Command',
-      '[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Clipboard -Format FileDropList | ForEach-Object FullName'],
-      { windowsHide: true });
-    let out = '';
-    ps.stdout.on('data', (d) => { out += d; });
-    ps.on('error', () => resolve([first]));
-    ps.on('close', () => {
-      const list = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-      resolve(list.length ? list : [first]);
-    });
-  });
+// y no la imagen). Electron 44 entrega el CF_HDROP como 'text/uri-list': una
+// URL file:// por renglón, la lista entera y sin lanzar PowerShell.
+async function clipboardFiles() {
+  try {
+    for (const item of await clipboard.read()) {
+      if (!item.types.includes('text/uri-list')) continue;
+      const text = await (await item.getType('text/uri-list')).text();
+      const list = text.split(/\r?\n/).map((u) => u.trim()).filter((u) => u.startsWith('file:'))
+        .map((u) => { try { return fileURLToPath(u); } catch { return ''; } }).filter(Boolean);
+      if (list.length) return list;
+    }
+  } catch { /* nada legible */ }
+  return [];
+}
+
+// La imagen del portapapeles como PNG, o null. Electron 44 la entrega como
+// un Blob 'image/png' dentro de un ClipboardItem.
+async function clipboardPng() {
+  try {
+    for (const item of await clipboard.read()) {
+      if (!item.types.includes('image/png')) continue;
+      const buf = Buffer.from(await (await item.getType('image/png')).arrayBuffer());
+      if (buf.length) return buf;
+    }
+  } catch { /* nada legible */ }
+  return null;
 }
 
 // Ctrl+V en "Para el celu": archivos copiados, o si no, la imagen del
@@ -600,20 +613,20 @@ ipcMain.handle('outbox:paste', async () => {
     const items = await addToOutbox(files, { emit: false });
     if (items.length) return { ok: true, items };
   }
-  const img = clipboard.readImage();
-  if (img.isEmpty()) return { ok: false };
+  const png = await clipboardPng();
+  if (!png) return { ok: false };
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
   const name = `recorte_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}.png`;
-  const m = await outbox.addBuffer(img.toPNG(), name);
+  const m = await outbox.addBuffer(png, name);
   return { ok: true, items: [outMeta(m)] };
 });
 
 // El Borrador copia texto plano: lo que se pegue después sale tal cual.
-ipcMain.handle('texto:copy', (_e, text) => {
+ipcMain.handle('texto:copy', async (_e, text) => {
   // El humo no le pisa el portapapeles a Fran: anota qué se habría copiado.
   if (SMOKE) { global.__umbralCopiado = String(text ?? ''); return true; }
-  clipboard.writeText(String(text ?? ''));
+  await clipboard.writeText(String(text ?? ''));
   return true;
 });
 
