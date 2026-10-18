@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    UMBRAL — renderer
    Tres vistas: Recibidas (teléfono → PC), Para el celu (PC → teléfono) y el
-   Borrador, un texto de paso que vive solo en memoria. Las piezas son de
+   Borrador, un texto de paso que comparten la PC y el celu. Las piezas son de
    Onyx: el router hace el fundido entre ellas, reconcile()
    pone la galería al día tarjeta por tarjeta, y menú, modal, toast y tooltip
    son los overlays del framework. Lo propio de Umbral es el visor, el QR, el
@@ -51,9 +51,9 @@ const S = {
   url: '',
   qr: '',
   booting: true,
-  // El Borrador: a propósito no se guarda en disco. Sobrevive a esconder la
-  // ventana al tray (el renderer sigue vivo) y se pierde al salir de Umbral.
+  // El Borrador: un espejo de borrador.txt, que es del main.
   borrador: '',
+  borradorDesde: null, // { desde, t }: el último cambio que vino de afuera, para decirlo abajo
   borradorSel: null,   // { start, end, scroll } al irse de la vista, para volver al mismo lugar
 };
 
@@ -319,12 +319,32 @@ function wireGrid(grid, v) {
 
 /* ══ El Borrador ═════════════════════════════════════════════════════════════
    Una instancia intermedia para copiar y pegar: un comando, un link, unas
-   palabras. Se escribe, se copia y se tira. Limpiar no pregunta: el toast
-   trae Deshacer por si fue sin querer. */
+   palabras. Vive en borrador.txt (borrador.js, en el main) y es el mismo que
+   ve Umbral Mobile. Lo que se escribe acá sale 250 ms después de la última
+   tecla; lo que cambia el celu, o un editor que abra el .txt, llega por
+   `borrador:changed` y entra en el lugar, con el cursor junto al mismo texto.
+   Si las dos puntas escriben a la vez, gana la última. Limpiar no pregunta:
+   el toast trae Deshacer por si fue sin querer. */
+
+let borrTimer = 0;   // distinto de 0 = hay algo escrito acá que todavía no salió
+
+function guardarBorrador({ ya = false } = {}) {
+  clearTimeout(borrTimer);
+  const sale = () => {
+    borrTimer = 0;
+    api.borrador.set(S.borrador).catch((err) => Toast.error('No se pudo guardar el borrador', err.message));
+  };
+  if (ya) sale();
+  else borrTimer = setTimeout(sale, 250);
+}
+
+const DESDE = { celu: 'el celu', archivo: 'el archivo' };
 
 const borradorInfo = () => {
+  const d = S.borradorDesde;
+  if (d && Date.now() - d.t < 2400) return `Cambió desde ${DESDE[d.desde] || 'afuera'}`;
   const n = S.borrador.length;
-  if (!n) return 'No se guarda: se borra al salir de Umbral';
+  if (!n) return 'Se guarda solo y se ve también en Umbral Mobile';
   const lineas = S.borrador.split('\n').length;
   return `${plural(n, 'carácter', 'caracteres')}${lineas > 1 ? ` · ${plural(lineas, 'línea', 'líneas')}` : ''}`;
 };
@@ -356,7 +376,12 @@ function viewBorrador() {
   ta.value = S.borrador;
   syncBorrador();
 
-  ta.addEventListener('input', () => { S.borrador = ta.value; syncBorrador(); });
+  ta.addEventListener('input', () => {
+    S.borrador = ta.value;
+    S.borradorDesde = null;
+    syncBorrador();
+    guardarBorrador();
+  });
   $('borr-copy').addEventListener('click', copiarBorrador);
   $('borr-clear').addEventListener('click', limpiarBorrador);
   Router.onLeave(() => { S.borradorSel = { start: ta.selectionStart, end: ta.selectionEnd, scroll: ta.scrollTop }; });
@@ -366,6 +391,42 @@ function viewBorrador() {
   ta.focus({ preventScroll: true });
   if (sel) { ta.setSelectionRange(sel.start, sel.end); ta.scrollTop = sel.scroll; }
   else ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+
+/* Dónde queda el cursor cuando el texto cambia desde afuera: si lo cambiado
+   está después, no se mueve; si está antes, se corre con el texto; si cae
+   adentro de lo cambiado, va al final de lo nuevo. */
+function moverCursor(viejo, nuevo, pos) {
+  const max = Math.min(viejo.length, nuevo.length);
+  let pre = 0;
+  while (pre < max && viejo[pre] === nuevo[pre]) pre++;
+  if (pos <= pre) return pos;
+  let suf = 0;
+  while (suf < max - pre && viejo[viejo.length - 1 - suf] === nuevo[nuevo.length - 1 - suf]) suf++;
+  if (pos >= viejo.length - suf) return pos + (nuevo.length - viejo.length);
+  return nuevo.length - suf;
+}
+
+function borradorDeAfuera({ text, desde }) {
+  if (text === S.borrador) return;
+  if (borrTimer) return;   // lo escrito acá todavía no salió: cuando salga, gana
+  S.borrador = text;
+  S.borradorSel = null;
+  S.borradorDesde = { desde, t: Date.now() };
+  const ta = $('borr');
+  if (ta) {
+    const viejo = ta.value;
+    const [a, b, top] = [ta.selectionStart, ta.selectionEnd, ta.scrollTop];
+    ta.value = text;
+    if (document.activeElement === ta) ta.setSelectionRange(moverCursor(viejo, text, a), moverCursor(viejo, text, b));
+    ta.scrollTop = top;
+    // Un destello del canto dice que el cambio vino de afuera.
+    ta.classList.remove('is-remoto');
+    void ta.offsetWidth;
+    ta.classList.add('is-remoto');
+  }
+  syncBorrador();
+  setTimeout(syncBorrador, 2500);   // y después vuelve el conteo
 }
 
 async function copiarBorrador() {
@@ -383,6 +444,8 @@ function limpiarBorrador() {
   const sel = S.borradorSel;
   S.borrador = '';
   S.borradorSel = null;
+  S.borradorDesde = null;
+  guardarBorrador({ ya: true });
   const ta = $('borr');
   if (ta) {
     ta.classList.add('is-limpiando');
@@ -395,9 +458,10 @@ function limpiarBorrador() {
   }
   syncBorrador();
   Toast.show({ title: 'Borrador limpio', icon: 'trash', duration: 5200, action: { label: 'Deshacer', run: () => {
-    if (S.borrador) return;   // ya escribiste algo nuevo: no se pisa
+    if (S.borrador) return;   // ya escribiste algo nuevo (acá o en el celu): no se pisa
     S.borrador = antes;
     S.borradorSel = sel;
+    guardarBorrador({ ya: true });
     const t = $('borr');
     if (t) { t.value = antes; t.focus({ preventScroll: true }); }
     syncBorrador();
@@ -436,9 +500,9 @@ function updateChrome() {
   sweep.disabled = !S.out.some((i) => i.delivered);
   sweep.dataset.tip = sweep.disabled ? 'Quitar las ya bajadas: ninguna bajó todavía' : 'Quitar las ya bajadas';
 
-  // El Borrador no tiene miniaturas, ni carpeta, ni nada que purgar.
+  // El Borrador no tiene miniaturas ni nada que purgar; su carpeta es la del .txt.
   $('size-tools').hidden = v === 'borrador';
-  $('files-tools').hidden = v === 'borrador';
+  $('nuke-tools').hidden = v === 'borrador';
 
   const nuke = $('btn-nuke');
   const vacia = v === 'celu' ? !S.out.length : !S.inbox.length;
@@ -447,7 +511,8 @@ function updateChrome() {
     ? (vacia ? 'La bandeja ya está vacía' : 'Vaciar la bandeja')
     : (vacia ? 'No hay nada que purgar' : 'Purgar todo');
 
-  $('btn-folder').dataset.tip = v === 'celu' ? 'Abrir la carpeta de la bandeja' : 'Abrir la carpeta de lo recibido';
+  $('btn-folder').dataset.tip = { celu: 'Abrir la carpeta de la bandeja', borrador: 'Mostrar borrador.txt en su carpeta' }[v]
+    || 'Abrir la carpeta de lo recibido';
   $('out-tools').hidden = v !== 'celu';
 
   // El segmentado sigue a la vista también cuando cambia sola (arrastrar, Enviar a).
@@ -468,7 +533,7 @@ function wireChrome() {
   syncSeg = bindSwitcher($('seg'), (v) => go(v));
 
   $('btn-qr').addEventListener('click', toggleQr);
-  $('btn-folder').addEventListener('click', () => api.openInbox(Router.name === 'celu' ? 'outbox' : 'inbox'));
+  $('btn-folder').addEventListener('click', () => api.openInbox({ celu: 'outbox', borrador: 'borrador' }[Router.name] || 'inbox'));
   $('btn-nuke').addEventListener('click', purgar);
   api.onShortcut(() => { if (Router.name === 'borrador') $('borr')?.focus({ preventScroll: true }); });
   $('btn-add').addEventListener('click', () => $('file-pick').click());
@@ -801,9 +866,11 @@ async function boot() {
   try {
     const info = await api.serverInfo();
     S.url = info.url || '';
-    [S.inbox, S.out, settings] = await Promise.all([
-      api.recibidas.list(), api.outbox.list(), window.onyx.settings.get().catch(() => ({})),
+    let borr;
+    [S.inbox, S.out, settings, borr] = await Promise.all([
+      api.recibidas.list(), api.outbox.list(), window.onyx.settings.get().catch(() => ({})), api.borrador.get(),
     ]);
+    S.borrador = borr?.text || '';
     S.qr = await api.qr().catch(() => '');
   } catch (err) {
     console.error(err);
@@ -834,6 +901,7 @@ async function boot() {
     Toast.show({ title: 'Celu vinculado', text: d?.device || '', icon: 'check', duration: 3200 });
   });
   api.outbox.onAdded((list, opts) => addOut(list, opts));
+  api.borrador.onChanged(borradorDeAfuera);
   api.outbox.onDelivered((item) => {
     const cur = S.out.find((i) => i.name === item.name);
     if (!cur) return;

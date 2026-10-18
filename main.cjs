@@ -39,6 +39,7 @@ const QRCode = require('qrcode');
 const { createUmbralServer } = require('./server');
 const { createOutbox } = require('./outbox');
 const { createPairing } = require('./pairing');
+const { createBorrador } = require('./borrador');
 const updater = require('./updater');
 
 /* Color base de arranque. Tiene que coincidir con --ox-bg de tokens.css (lo
@@ -88,6 +89,12 @@ const ipc = require('./src/ipc.cjs');
 const dataDir = process.env.UMBRAL_DATA || (app.isPackaged ? app.getPath('userData') : __dirname);
 const inboxDir = path.join(dataDir, 'inbox');
 const outbox = createOutbox(path.join(dataDir, 'outbox'));
+
+// El Borrador: un borrador.txt junto al inbox. Lo que cambia el celu o un
+// editor de afuera se le avisa al renderer; lo que escribe la PC ya lo tiene.
+const borrador = createBorrador(path.join(dataDir, 'borrador.txt'), {
+  onChange: (estado, desde) => { if (desde !== 'pc') sendWin('borrador:changed', { ...estado, desde }); },
+});
 
 // Archivos que llegan por línea de comandos ("Enviar a → Umbral") antes de
 // que el renderer esté listo para recibirlos.
@@ -559,8 +566,15 @@ ipcMain.handle('pair:cancel', () => pairing.cancel());
 // Olvidar dispositivos: llave nueva, y con ella un QR nuevo.
 ipcMain.handle('pair:revoke', async () => { await pairing.revoke(); return qrDataUrl(); });
 
-ipcMain.handle('inbox:open', (_e, which) => {
+ipcMain.handle('inbox:open', async (_e, which) => {
   // explorer.exe directo: shell.openPath falla silencioso en algunos contextos
+  if (which === 'borrador') {
+    // La carpeta con el .txt ya marcado. Si todavía no existe, se crea vacío.
+    await borrador.flush();
+    if (!fs.existsSync(borrador.file)) await fsp.writeFile(borrador.file, '', 'utf8').catch(() => {});
+    spawn('explorer.exe', [`/select,${borrador.file}`], { detached: true, stdio: 'ignore' }).unref();
+    return;
+  }
   const dir = which === 'outbox' ? path.join(dataDir, 'outbox') : inboxDir;
   spawn('explorer.exe', [dir], { detached: true, stdio: 'ignore' }).unref();
 });
@@ -622,6 +636,9 @@ ipcMain.handle('outbox:paste', async () => {
   return { ok: true, items: [outMeta(m)] };
 });
 
+ipcMain.handle('borrador:get', () => borrador.get());
+ipcMain.handle('borrador:set', (_e, text) => borrador.set(text, { desde: 'pc' }));
+
 // El Borrador copia texto plano: lo que se pegue después sale tal cual.
 ipcMain.handle('texto:copy', async (_e, text) => {
   // El humo no le pisa el portapapeles a Fran: anota qué se habría copiado.
@@ -674,6 +691,7 @@ app.whenReady().then(async () => {
   // En el humo, argv trae el archivo del test: no es un «Enviar a».
   if (!SMOKE) pendingArgs.push(...argFiles(process.argv.slice(1)));
 
+  await borrador.load();
   const vinculo = store.doc('vinculo', null);
   pairing = await createPairing({
     load: async () => (await vinculo.read())?.llave || null,
@@ -693,6 +711,7 @@ app.whenReady().then(async () => {
     onDelivered: (m) => sendWin('outbox:delivered', outMeta(m)),
     pairing,
     onPaired: (d) => sendWin('pair:done', d),
+    borrador,
   });
   const ip = lanIp();
   serverInfo = { ip, port, url: `http://${ip}:${port}` };
@@ -710,7 +729,10 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', () => { quitting = true; });
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  borrador.close();   // lo que estaba por guardarse se escribe ya
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

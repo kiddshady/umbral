@@ -370,3 +370,10 @@
   color: var(--ox-text-4);
   font-variant-numeric: tabular-nums;
 }
+/* Un cambio que vino del celu (o del .txt): el canto se enciende y se apaga. */
+.ub-borr__text.is-remoto { animation: ub-remoto 1.1s var(--ox-ease-soft); }
+@keyframes ub-remoto {
+  from { box-shadow: inset 0 0 0 1px var(--ox-accent), 0 0 0 3px var(--ox-wash-2); }
+}
+/* La purga se pliega adentro de su grupo, que tiene otro espacio entre botones. */
+#files-tools { --ox-plegable-gap: var(--ox-1); }

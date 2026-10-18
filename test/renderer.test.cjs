@@ -386,7 +386,8 @@ app.whenReady().then(async () => {
     const foot = document.querySelector('.ub-borr__foot').getBoundingClientRect();
     return { focus: document.activeElement === ta, h: r.height, left: r.left, seg: seg.left, right: innerWidth - r.right,
       footBottom: innerHeight - foot.bottom, copyOff: document.getElementById('borr-copy').disabled,
-      sizeHidden: document.getElementById('size-tools').hidden, filesHidden: document.getElementById('files-tools').hidden,
+      sizeHidden: document.getElementById('size-tools').hidden, nukeHidden: document.getElementById('nuke-tools').hidden,
+      folderTip: document.getElementById('btn-folder').dataset.tip,
       info: document.getElementById('borr-info').textContent };
   })()`);
   ok('el campo tiene el foco al entrar', b0.focus);
@@ -394,8 +395,9 @@ app.whenReady().then(async () => {
   ok('arranca en la misma columna que el segmentado', Math.abs(b0.left - b0.seg) < 1, `${b0.left} vs ${b0.seg}`);
   ok('la sangría derecha es la misma que la izquierda', Math.abs(b0.right - b0.left) < 1, `${b0.right} vs ${b0.left}`);
   ok('el pie queda dentro de la ventana', b0.footBottom >= 8, `${b0.footBottom} px`);
-  ok('vacío: Copiar todo apagado y avisa que no se guarda', b0.copyOff && /no se guarda/i.test(b0.info), b0.info);
-  ok('miniaturas, carpeta y purga plegadas', b0.sizeHidden && b0.filesHidden);
+  ok('vacío: Copiar todo apagado y dice que se ve en el celu', b0.copyOff && /Umbral Mobile/.test(b0.info), b0.info);
+  ok('miniaturas y purga plegadas', b0.sizeHidden && b0.nukeHidden);
+  ok('la carpeta queda, para mostrar el .txt', /borrador\.txt/.test(b0.folderTip), b0.folderTip);
 
   const TXT = 'git push origin main\nhttps://ejemplo.com/ñandú';
   await js(`(() => { const ta = document.getElementById('borr'); ta.value = ${JSON.stringify(TXT)};
@@ -424,6 +426,27 @@ app.whenReady().then(async () => {
   ok('el toast trae Deshacer', await tap('.ox-toast__action'));
   await sleep(300);
   ok('Deshacer devuelve el texto', (await js(`document.getElementById('borr').value`)) === TXT);
+
+  // El .txt y el celu: lo de acá llega al disco y al servidor; lo del celu, al campo.
+  const TXTF = path.join(DIR, 'borrador.txt');
+  let enDisco = '';
+  for (let i = 0; i < 30 && enDisco !== TXT; i++) { await sleep(100); try { enDisco = fs.readFileSync(TXTF, 'utf8'); } catch { /* todavía no */ } }
+  ok('lo escrito queda en borrador.txt', enDisco === TXT, JSON.stringify(enDisco));
+  const g = JSON.parse((await request('GET', '/borrador')).body.toString('utf8'));
+  ok('el celu lo lee por GET /borrador', g.text === TXT, JSON.stringify(g));
+  await js(`(() => { const ta = document.getElementById('borr'); ta.focus(); ta.setSelectionRange(3, 3); })()`);
+  const DEL_CELU = 'ok ' + TXT;
+  const put = await request('PUT', '/borrador', Buffer.from(JSON.stringify({ text: DEL_CELU, base: g.hash })), { type: 'application/json' });
+  ok('PUT del celu con la versión actual: 200', put.status === 200, String(put.status));
+  await sleep(250);
+  const r1 = await js(`(() => { const ta = document.getElementById('borr');
+    return { v: ta.value, sel: ta.selectionStart, remoto: ta.classList.contains('is-remoto'), info: document.getElementById('borr-info').textContent }; })()`);
+  ok('lo del celu entra en el campo sin tocar nada', r1.v === DEL_CELU, JSON.stringify(r1.v));
+  ok('el cursor se corre con el texto que se agregó antes', r1.sel === 6, `cursor en ${r1.sel}`);
+  ok('el canto avisa que vino de afuera', r1.remoto);
+  ok('y abajo dice desde dónde', /desde el celu/.test(r1.info), r1.info);
+  const vieja = await request('PUT', '/borrador', Buffer.from(JSON.stringify({ text: 'pisado', base: g.hash })), { type: 'application/json' });
+  ok('PUT con una versión vieja: 409 y no pisa', vieja.status === 409 && (await js(`document.getElementById('borr').value`)) === DEL_CELU, String(vieja.status));
 
   for (const v of ['recibidas', 'celu', 'borrador']) {
     await tap(`.ox-segmented__opt[data-value="${v}"]`);

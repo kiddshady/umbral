@@ -5,6 +5,9 @@
 //   GET  /out             → lista de la bandeja de salida (JSON)
 //   GET  /out/thumb/:name → miniatura liviana (o el original si no se puede achicar)
 //   GET  /out/file/:name  → el archivo; con ?dl=1 lo marca como entregado
+// El Borrador (0.7), el mismo texto en los dos lados
+//   GET  /borrador        → { text, hash }
+//   PUT  /borrador        → { text, base? } → { hash }; 409 si base ya no es la actual
 // Otros
 //   GET  /                → página mobile (enviar / recibir)
 //   GET  /favicon.ico     → el ícono de la pestaña
@@ -12,7 +15,7 @@
 //   GET  /ping            → health-check; con el nombre del equipo, que la app del celu muestra
 //   POST /pair            → {code} de 6 dígitos → la llave de esta PC (ver pairing.js)
 //
-// Desde la 0.4 todo lo que mueve archivos (/drop y /out*) pide la llave:
+// Desde la 0.4 todo lo que mueve archivos (/drop y /out*) pide la llave, y el Borrador también:
 // Authorization: Bearer <llave>, o ?k=<llave>. Lo demás queda abierto, porque
 // el celu tiene que poder encontrar la PC y vincularse antes de tenerla.
 
@@ -198,7 +201,7 @@ function tailnetIps() {
 
 // --- servidor --------------------------------------------------------------
 
-function createUmbralServer({ inboxDir, basePort, onFile, outbox, thumb, onDelivered, pairing, onPaired }) {
+function createUmbralServer({ inboxDir, basePort, onFile, outbox, thumb, onDelivered, pairing, onPaired, borrador }) {
   const pagePath = path.join(__dirname, 'phone.html');
 
   const server = http.createServer(async (req, res) => {
@@ -242,6 +245,22 @@ function createUmbralServer({ inboxDir, basePort, onFile, outbox, thumb, onDeliv
 
       // De acá para abajo, solo con la llave.
       if (!pairing.check(keyOf(req, url))) return json(res, 401, { ok: false, error: 'unauthorized' });
+
+      // ---------------------------------------------------- el Borrador
+      // GET → { text, hash }. PUT { text, base? } → { hash }; si `base` ya no
+      // es la versión actual, 409 con lo que hay (ver borrador.js).
+      if (p === '/borrador' && borrador) {
+        if (req.method === 'GET') return json(res, 200, { ok: true, ...borrador.get() });
+        if (req.method === 'PUT') {
+          let body = null;
+          try { body = JSON.parse((await readBody(req)).toString('utf8')); } catch { /* abajo */ }
+          if (typeof body?.text !== 'string') return json(res, 400, { ok: false, error: 'bad-body' });
+          const r = borrador.set(body.text, { desde: 'celu', base: typeof body.base === 'string' ? body.base : null });
+          if (!r.ok) return json(res, r.error === 'too-big' ? 413 : 409, r);
+          return json(res, 200, { ok: true, hash: r.hash });
+        }
+        return json(res, 405, { ok: false, error: 'method' });
+      }
 
       // ---------------------------------------------------- teléfono → PC
       if (req.method === 'POST' && p === '/drop') {

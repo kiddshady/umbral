@@ -93,16 +93,18 @@
       <button class="ox-iconbtn" id="btn-sweep" data-tip="Quitar las ya bajadas" data-tip-side="bottom"><i data-icon="sweep"></i></button>
     </div>
 
-    <!-- Las miniaturas, la carpeta y la purga no tienen sentido en el Borrador. -->
+    <!-- Las miniaturas y la purga no tienen sentido en el Borrador. -->
     <div class="ub-size ub-bar__group ox-plegable--ancho" id="size-tools" data-tip="Tamaño de las miniaturas" data-tip-side="bottom">
       <i data-icon="sizeSm"></i>
       <input type="range" class="ox-slider" id="thumb-size" min="150" max="420" step="10" aria-label="Tamaño de las miniaturas">
       <i data-icon="sizeLg"></i>
     </div>
 
-    <div class="ub-bar__group ox-plegable--ancho" id="files-tools">
+    <div class="ub-bar__group" id="files-tools">
       <button class="ox-iconbtn" id="btn-folder" data-tip="Abrir la carpeta" data-tip-side="bottom"><i data-icon="folder"></i></button>
-      <button class="ox-iconbtn ub-nuke" id="btn-nuke" data-tip="Purgar todo" data-tip-side="bottom"><i data-icon="nuke"></i></button>
+      <div class="ub-bar__group ox-plegable--ancho" id="nuke-tools">
+        <button class="ox-iconbtn ub-nuke" id="btn-nuke" data-tip="Purgar todo" data-tip-side="bottom"><i data-icon="nuke"></i></button>
+      </div>
     </div>
   </div>
 
