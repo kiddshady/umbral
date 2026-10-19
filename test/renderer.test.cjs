@@ -514,6 +514,17 @@ app.whenReady().then(async () => {
     ok(`${v}: ningún anillo de foco se corta ni roza un canto`, cortes.length === 0, '\n      ' + cortes.join('\n      '));
   }
 
+  // Ctrl 1, 2 y 3: cada pestaña, también con el foco adentro del Borrador.
+  for (const [tecla, v] of [['1', 'recibidas'], ['2', 'celu'], ['3', 'borrador'], ['2', 'celu'], ['1', 'recibidas']]) {
+    ctrl(tecla);
+    await sleep(600);
+    const vista = await js(`document.querySelector('.ox-segmented__opt.is-active')?.dataset.value`);
+    ok(`Ctrl ${tecla} va a ${v}`, vista === v, String(vista));
+  }
+  ctrl('4');
+  await sleep(300);
+  ok('Ctrl 4 no hace nada', (await js(`document.querySelector('.ox-segmented__opt.is-active')?.dataset.value`)) === 'recibidas');
+
   console.log('\n8. Consola');
   ok('sin errores ni advertencias del renderer', errores.length === 0, '\n      ' + errores.join('\n      '));
 

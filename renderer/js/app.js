@@ -602,6 +602,13 @@ function onKey(e) {
     else if (lightbox) closeLightbox();
     return;
   }
+  // Ctrl 1, 2 y 3 van a cada pestaña, en el orden del segmentado. Sale del
+  // código físico para que ande igual con el teclado numérico.
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+    const n = /^(?:Digit|Numpad)([1-9])$/.exec(e.code)?.[1];
+    const v = n && $('seg').querySelectorAll('.ox-segmented__opt')[n - 1]?.dataset.value;
+    if (v) { e.preventDefault(); go(v); return; }
+  }
   // En el Borrador, Ctrl + / Ctrl - / Ctrl 0 son de la letra, no del zoom de la ventana.
   if (Router.name === 'borrador' && e.ctrlKey && !e.altKey) {
     const { key: tecla, code } = e;
