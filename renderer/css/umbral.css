@@ -364,6 +364,10 @@
               color var(--ox-t-2) var(--ox-ease-soft),
               font-size var(--ox-t-1) var(--ox-ease-soft);
 }
+/* Con foco, el campo de Onyx pasa del hundido al fondo, un tono más claro: en
+   un campo que llena la vista se lee como que la pantalla se aclara. Acá el
+   fondo es siempre el hundido; el foco lo marca solo el canto. */
+.ub-borr__text:focus { background: var(--ox-sunken); }
 /* Limpiar: el texto se funde por color antes de vaciarse. */
 .ub-borr__text.is-limpiando { color: transparent; }
 .ub-borr__foot { display: flex; align-items: center; gap: var(--ox-2); min-height: 28px; }

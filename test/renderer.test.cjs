@@ -413,6 +413,13 @@ app.whenReady().then(async () => {
   ok('vacío: Copiar todo apagado y dice que se ve en el celu', b0.copyOff && /Umbral Mobile/.test(b0.info), b0.info);
   ok('miniaturas y purga plegadas', b0.sizeHidden && b0.nukeHidden);
   ok('la carpeta queda, para mostrar el .txt', /borrador\.txt/.test(b0.folderTip), b0.folderTip);
+  const fondo = () => js(`getComputedStyle(document.getElementById('borr')).backgroundColor`);
+  const conFoco = await fondo();
+  await js(`document.getElementById('borr').blur()`);
+  await sleep(400);
+  const sinFoco = await fondo();
+  ok('el fondo es el mismo con foco y sin foco', conFoco === sinFoco, `${conFoco} vs ${sinFoco}`);
+  await js(`document.getElementById('borr').focus()`);
 
   const TXT = 'git push origin main\nhttps://ejemplo.com/ñandú';
   await js(`(() => { const ta = document.getElementById('borr'); ta.value = ${JSON.stringify(TXT)};
