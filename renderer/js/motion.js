@@ -773,6 +773,39 @@ export function countTo(el, to, { from = 0, duration = 700, format = (n) => n } 
   requestAnimationFrame(tick);
 }
 
+/* ── Números que corren ─────────────────────────────────────────────────────
+   Como countTo(), pero arranca de lo que se ve AHORA: cada dato nuevo retoma
+   la carrera desde donde iba en vez de volver a cero o saltar. Es lo que pide
+   un porcentaje que llega de a pedazos (una descarga, una instalación). No
+   destella: corre solo, y un destello en cada pedazo titilaría.
+   `to` es un número o un objeto de números; `paint` recibe el valor (o el
+   objeto) de cada cuadro y escribe. La primera vez escribe sin correr, salvo
+   que `from` diga qué número muestra ya el texto. De Opal (oct 2026). */
+export function roll(el, to, paint, { duration = 420, from: start0 } = {}) {
+  if (!el) return;
+  const obj = typeof to === 'object' && to !== null;
+  if (!el.__roll && Number.isFinite(start0)) el.__roll = { cur: start0, to: start0, raf: 0 };   // lo que ya dice el texto
+  const st = el.__roll;
+  if (!st) { el.__roll = { cur: to, to, raf: 0 }; paint(to); return; }
+  if (JSON.stringify(st.to) === JSON.stringify(to)) return;
+  cancelAnimationFrame(st.raf);
+  st.to = to;
+  const from = st.cur;
+  const start = performance.now();
+  const ease = (t) => 1 - Math.pow(1 - t, 3);
+  const lerp = (a, b, k) => (Number.isFinite(a) ? a + (b - a) * k : b);
+  const frame = (now) => {
+    if (!el.isConnected) return;
+    const k = ease(Math.min(1, (now - start) / duration));
+    st.cur = obj
+      ? Object.fromEntries(Object.keys(to).map((key) => [key, lerp(from?.[key], to[key], k)]))
+      : lerp(from, to, k);
+    paint(st.cur);
+    if (k < 1) st.raf = requestAnimationFrame(frame);
+  };
+  st.raf = requestAnimationFrame(frame);
+}
+
 /** Marca un valor que acaba de cambiar: destella y vuelve. */
 export function tick(el) {
   el.classList.remove('ox-ticked');

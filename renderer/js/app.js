@@ -11,7 +11,7 @@
 import { Icons } from './icons.js';
 import { Tooltip, Toast, Menu, Modal } from './overlays.js';
 import Router from './router.js';
-import { initClickFlash, initScrollFades, raf2, bindSwitcher, exit, swap, numero, valor, frase, reconcile, stagger, deslizarAlto } from './motion.js';
+import { initClickFlash, initScrollFades, raf2, bindSwitcher, exit, swap, numero, valor, frase, reconcile, stagger, deslizarAlto, roll } from './motion.js';
 import { esc, paint, mark, attempt, colorToken } from './ui.js';
 import { fmtClock, plural, locale } from './format.js';
 
@@ -833,9 +833,16 @@ function renderUpd(s) {
     });
     layer().appendChild(upd);
   } else if (key === updKey && v.bar != null) {
-    // Mientras baja solo cambian el número y la barra: no se rearma la tarjeta.
-    valor(upd.querySelector('.ub-upd__sub'), esc(v.sub));
-    upd.querySelector('.ox-meter__fill')?.style.setProperty('--ox-pct', `${(v.bar * 100).toFixed(1)}%`);
+    /* Mientras baja solo cambian el número y la barra: no se rearma la tarjeta.
+       El número corre con roll() desde el que se ve, sin destello: con valor()
+       destellaba en cada aviso del principal, varias veces por segundo, y el
+       % se prendía y apagaba sin parar. Se busca lo vivo, no lo que todavía
+       se esfuma en el calco del relevo. */
+    const vivo = (sel) => [...upd.querySelectorAll(sel)].find((n) => !n.closest('.ox-swap-out'));
+    const sub = vivo('.ub-upd__sub');
+    if (sub) roll(sub, Math.round(v.bar * 100), (n) => { sub.textContent = `${Math.round(n)} %`; },
+      { from: parseInt(sub.textContent, 10) });
+    vivo('.ox-meter__fill')?.style.setProperty('--ox-pct', `${(v.bar * 100).toFixed(1)}%`);
   } else if (key !== updKey) {
     const el = upd;
     deslizarAlto(el, () => swap(el, updHTML(v), { relevo: true }));

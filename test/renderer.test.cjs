@@ -264,7 +264,22 @@ app.whenReady().then(async () => {
   await sleep(600);
   ok('bajando lleva su barra', (await js(`getComputedStyle(document.querySelector('.ub-upd .ox-meter__fill')).getPropertyValue('--ox-pct').trim()`)) === '42.0%');
   estado({ phase: 'downloading', pct: 0.5 });
-  await sleep(300);
+  /* El número corre (roll) y no destella: con valor() destellaba en cada aviso
+     y, con varios por segundo, el % se prendía y apagaba sin parar. */
+  const corre = await js(`(async () => {
+    const sub = document.querySelector('.ub-upd__sub');
+    const vistos = [];
+    let destello = false;
+    for (let i = 0; i < 12; i++) {
+      await new Promise((r) => requestAnimationFrame(r));
+      vistos.push(parseInt(sub.textContent, 10));
+      destello = destello || sub.classList.contains('ox-ticked');
+    }
+    return { vistos, destello };
+  })()`);
+  ok('el % corre hasta el nuevo, sin destello', !corre.destello && corre.vistos.some((n) => n > 42 && n < 50)
+    && corre.vistos.every((n, i, a) => !i || n >= a[i - 1]), JSON.stringify(corre));
+  await sleep(500);
   ok('y el número cambia en el lugar', (await js(`document.querySelector('.ub-upd__sub').textContent`)) === '50 %'
     && (await js(`document.querySelectorAll('.ub-upd').length`)) === 1);
   estado({ phase: 'ready' });
