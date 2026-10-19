@@ -442,6 +442,33 @@ app.whenReady().then(async () => {
   await sleep(300);
   ok('Deshacer devuelve el texto', (await js(`document.getElementById('borr').value`)) === TXT);
 
+  // La letra: Ctrl + / Ctrl - / Ctrl 0, sin tocar el zoom de la ventana.
+  const ctrl = (keyCode) => {
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers: ['control'] });
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers: ['control'] });
+  };
+  const letra = () => js(`(() => { const ta = document.getElementById('borr');
+    return { fs: getComputedStyle(ta).fontSize, info: document.getElementById('borr-info').textContent }; })()`);
+  ok('la letra arranca en 12 px', (await letra()).fs === '12px', (await letra()).fs);
+  ctrl('Plus'); ctrl('Plus'); ctrl('Plus');
+  await sleep(400);
+  const l1 = await letra();
+  ok('Ctrl + agranda de a un píxel', l1.fs === '15px', l1.fs);
+  ok('y abajo dice el tamaño', /Letra de 15 px/.test(l1.info), l1.info);
+  ok('la ventana no se hizo zoom', win.webContents.getZoomLevel() === 0, String(win.webContents.getZoomLevel()));
+  ctrl('-');
+  await sleep(500);
+  ok('Ctrl - achica', (await letra()).fs === '14px', (await letra()).fs);
+  let guardada = null;
+  for (let i = 0; i < 20 && guardada !== 14; i++) { await sleep(100); guardada = (await js(`window.onyx.settings.get()`)).borradorLetra; }
+  ok('queda guardada para la próxima', guardada === 14, String(guardada));
+  await sleep(1800);
+  ok('después vuelve el conteo', /2 líneas/.test((await letra()).info), (await letra()).info);
+  ctrl('0');
+  await sleep(400);
+  ok('Ctrl 0 vuelve a 12 px', (await letra()).fs === '12px', (await letra()).fs);
+  ok('la ventana sigue sin zoom', win.webContents.getZoomLevel() === 0, String(win.webContents.getZoomLevel()));
+
   // El .txt y el celu: lo de acá llega al disco y al servidor; lo del celu, al campo.
   const TXTF = path.join(DIR, 'borrador.txt');
   let enDisco = '';

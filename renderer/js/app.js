@@ -55,6 +55,8 @@ const S = {
   borrador: '',
   borradorDesde: null, // { desde, t }: el último cambio que vino de afuera, para decirlo abajo
   borradorSel: null,   // { start, end, scroll } al irse de la vista, para volver al mismo lugar
+  borradorLetra: 12,   // px; se cambia con Ctrl + / Ctrl - / Ctrl 0 y queda en settings
+  borradorLetraT: 0,   // cuándo se cambió, para decirlo abajo un rato
 };
 
 const fmtWhen = (ms) => `${fmtClock(ms)} · ${new Date(ms).toLocaleDateString(locale.tag, { day: '2-digit', month: '2-digit' })}`;
@@ -342,6 +344,8 @@ const DESDE = { celu: 'el celu', archivo: 'el archivo' };
 
 const borradorInfo = () => {
   const d = S.borradorDesde;
+  // Si la letra y un cambio de afuera se pisan, se dice el último.
+  if (Date.now() - S.borradorLetraT < 1600 && !(d && d.t > S.borradorLetraT)) return `Letra de ${S.borradorLetra} px`;
   if (d && Date.now() - d.t < 2400) return `Cambió desde ${DESDE[d.desde] || 'afuera'}`;
   const n = S.borrador.length;
   if (!n) return 'Se guarda solo y se ve también en Umbral Mobile';
@@ -384,6 +388,16 @@ function viewBorrador() {
   });
   $('borr-copy').addEventListener('click', copiarBorrador);
   $('borr-clear').addEventListener('click', limpiarBorrador);
+  // Ctrl + rueda también agranda o achica, de a un paso por muesca.
+  let rueda = 0;
+  ta.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    rueda += e.deltaY;
+    if (Math.abs(rueda) < 50) return;
+    letraBorrador(rueda < 0 ? 1 : -1);
+    rueda = 0;
+  }, { passive: false });
   Router.onLeave(() => { S.borradorSel = { start: ta.selectionStart, end: ta.selectionEnd, scroll: ta.scrollTop }; });
 
   // El foco se pone al navegar: se vuelve al mismo lugar donde estaba el cursor.
@@ -391,6 +405,31 @@ function viewBorrador() {
   ta.focus({ preventScroll: true });
   if (sel) { ta.setSelectionRange(sel.start, sel.end); ta.scrollTop = sel.scroll; }
   else ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+
+/* El tamaño de la letra del Borrador, aparte del zoom de la ventana: Ctrl +
+   y Ctrl - de a un píxel, Ctrl 0 vuelve al de siempre. Se ve abajo un rato
+   («Letra de 14 px») y queda guardado para la próxima. */
+const LETRA = { min: 9, max: 32, base: 12 };
+let letraTimer = 0;
+let letraInfoTimer = 0;
+
+function ponerLetra(px) {
+  document.documentElement.style.setProperty('--ub-borr-fs', `${px}px`);
+}
+
+function letraBorrador(paso) {
+  const px = paso === 0 ? LETRA.base : Math.min(LETRA.max, Math.max(LETRA.min, S.borradorLetra + paso));
+  S.borradorLetraT = Date.now();
+  if (px !== S.borradorLetra) {
+    S.borradorLetra = px;
+    ponerLetra(px);
+    clearTimeout(letraTimer);
+    letraTimer = setTimeout(() => window.onyx.settings.save({ borradorLetra: px }).catch(() => {}), 300);
+  }
+  syncBorrador();
+  clearTimeout(letraInfoTimer);
+  letraInfoTimer = setTimeout(syncBorrador, 1700);   // y después vuelve el conteo
 }
 
 /* Dónde queda el cursor cuando el texto cambia desde afuera: si lo cambiado
@@ -561,6 +600,14 @@ function onKey(e) {
     if (qr) closeQr();
     else if (lightbox) closeLightbox();
     return;
+  }
+  // En el Borrador, Ctrl + / Ctrl - / Ctrl 0 son de la letra, no del zoom de la ventana.
+  if (Router.name === 'borrador' && e.ctrlKey && !e.altKey) {
+    const { key: tecla, code } = e;
+    const paso = ['+', '='].includes(tecla) || code === 'NumpadAdd' ? 1
+      : ['-', '_'].includes(tecla) || code === 'NumpadSubtract' ? -1
+      : tecla === '0' || code === 'Numpad0' ? 0 : null;
+    if (paso !== null) { e.preventDefault(); letraBorrador(paso); return; }
   }
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'v') {
     if (e.target.closest?.('input, textarea, [contenteditable]')) return;
@@ -886,6 +933,8 @@ async function boot() {
 
   $('addr').textContent = S.url;
   wireSize(settings.miniatura || 220);
+  S.borradorLetra = Math.min(LETRA.max, Math.max(LETRA.min, Number(settings.borradorLetra) || LETRA.base));
+  ponerLetra(S.borradorLetra);
   wireChrome();
   Router.onChange(updateChrome);
   Router.go('recibidas');

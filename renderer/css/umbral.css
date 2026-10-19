@@ -355,12 +355,14 @@
   min-height: 0;
   resize: none;
   padding: var(--ox-3) var(--ox-4);
+  font-size: var(--ub-borr-fs, 12px);   /* Ctrl + / Ctrl -; el alto de renglón la sigue */
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   transition: box-shadow var(--ox-t-2) var(--ox-ease-soft),
               background-color var(--ox-t-2) var(--ox-ease-soft),
-              color var(--ox-t-2) var(--ox-ease-soft);
+              color var(--ox-t-2) var(--ox-ease-soft),
+              font-size var(--ox-t-1) var(--ox-ease-soft);
 }
 /* Limpiar: el texto se funde por color antes de vaciarse. */
 .ub-borr__text.is-limpiando { color: transparent; }
