@@ -874,8 +874,12 @@ const molde = (s) => s.replace(/\d[\d.,]*/g, '#');
  * sus números, se reescribe en el lugar con un destello, como un número: un
  * relevo de la frase entera en cada tecla la apagaría y prendería sin parar.
  * Si cambió la frase, relevo; lo vacío entra o se va esfumándose.
+ * Con `{ destello: false }` las cifras cambian en su lugar sin destello: es
+ * para un conteo que corre con cada tecla, donde el destello se reinicia sin
+ * parar y se corta al dejar de escribir. El relevo cuando cambia la frase
+ * sigue igual. (Viene de Onyx, que lo tiene para los progresos.)
  */
-export function frase(el, html) {
+export function frase(el, html, { destello = true } = {}) {
   if (!el) return;
   // Durante un relevo el textContent junta lo que se va con lo que llega: por
   // eso se compara contra la última frase puesta, no contra el DOM.
@@ -885,7 +889,7 @@ export function frase(el, html) {
   if (viejo === nuevo) return;
   const soloCifras = viejo !== '' && nuevo !== '' && molde(viejo) === molde(nuevo);
   swap(el, html, soloCifras ? {} : { relevo: true });
-  if (soloCifras) tick(el);
+  if (soloCifras && destello) tick(el);
 }
 
 /** Algo que cambia muy seguido (con las flechas apretadas, cada 45 ms): se

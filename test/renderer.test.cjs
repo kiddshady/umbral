@@ -420,6 +420,16 @@ app.whenReady().then(async () => {
   await sleep(450);
   const info = await js(`document.getElementById('borr-info').textContent`);
   ok('cuenta caracteres y líneas', /2 líneas/.test(info), info);
+  // Una tecla más: el conteo cambia en su lugar, sin destello.
+  await js(`(() => { const ta = document.getElementById('borr'); ta.value += '!';
+    ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await sleep(60);
+  const tecla = await js(`(() => { const el = document.getElementById('borr-info');
+    return { ticked: el.classList.contains('ox-ticked'), info: el.textContent }; })()`);
+  ok('el conteo cambia sin destellar', !tecla.ticked && /2 líneas/.test(tecla.info), JSON.stringify(tecla));
+  await js(`(() => { const ta = document.getElementById('borr'); ta.value = ${JSON.stringify(TXT)};
+    ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await sleep(450);
   await tap('#borr-copy');
   await sleep(250);
   ok('Copiar todo manda el texto entero', global.__umbralCopiado === TXT, JSON.stringify(global.__umbralCopiado));

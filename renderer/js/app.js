@@ -361,7 +361,8 @@ function syncBorrador() {
   copy.disabled = clear.disabled = vacio;
   copy.dataset.tip = vacio ? 'No hay nada que copiar' : 'Copiar todo el texto';
   clear.dataset.tip = vacio ? 'Ya está vacío' : 'Borrar todo el texto';
-  frase($('borr-info'), esc(borradorInfo()));
+  // Sin destello: con cada tecla se reiniciaba y al dejar de escribir se cortaba.
+  frase($('borr-info'), esc(borradorInfo()), { destello: false });
 }
 
 function viewBorrador() {
