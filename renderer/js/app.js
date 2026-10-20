@@ -58,6 +58,7 @@ const S = {
   borradorLetra: 12,   // px; se cambia con Ctrl + / Ctrl - / Ctrl 0 y queda en settings
   borradorLetraT: 0,   // cuándo se cambió, para decirlo abajo un rato
   borradorAviso: null, // { texto, t }: algo que se hizo con una tecla (Ctrl+K), para decirlo abajo un rato
+  buscado: '',         // lo último que se buscó con Ctrl+F: vuelve al abrir de nuevo
 };
 
 const fmtWhen = (ms) => `${fmtClock(ms)} · ${new Date(ms).toLocaleDateString(locale.tag, { day: '2-digit', month: '2-digit' })}`;
@@ -616,6 +617,239 @@ async function cortarLinea(ta) {
   await attempt(() => api.copyText(junto), { errorTitle: 'No se pudo copiar la línea' });
 }
 
+/* Ctrl+F busca en el Borrador, como en VS Code: una barra flotante arriba a
+   la derecha, sin distinguir mayúsculas ni tildes («cancion» encuentra
+   «Canción»). Las coincidencias se pintan en una capa encima del campo, con
+   un espejo que tiene la misma letra y los mismos cortes de renglón; la
+   actual va como el cursor, violeta con la letra en oscuro. Enter y
+   Shift+Enter (o F3 y Shift+F3) van a la siguiente y a la anterior; Esc
+   cierra y deja seleccionada la que estaba marcada. */
+let buscar = null;   // el buscador de la vista del Borrador que se ve
+
+/* El texto plegado (sin tildes, en minúscula) y, para cada letra plegada, en
+   qué letra del original estaba: así lo encontrado vuelve a su lugar. */
+function plegar(s) {
+  let t = '';
+  const idx = [];
+  for (let i = 0; i < s.length; i++) {
+    const p = s[i].normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+    for (let k = 0; k < p.length; k++) idx.push(i);
+    t += p;
+  }
+  idx.push(s.length);
+  return { t, idx };
+}
+
+function buscador(ta) {
+  const caja = ta.parentElement;
+  const capa = document.createElement('div');
+  capa.className = 'ub-hallazgos';
+  capa.setAttribute('aria-hidden', 'true');
+  ta.after(capa);
+
+  let barra = null;
+  let tira = null;
+  let marcas = [];
+  let hallados = [];   // [desde, hasta] en el texto del campo
+  let actual = -1;
+  let ancla = 0;       // desde dónde se busca: el cursor al abrir, o la última a la que se fue
+  let pintado = { texto: null, q: null, clave: '' };
+  let plegado = { texto: null, p: null };
+  let raf = 0;
+
+  const q = () => barra?.querySelector('.ub-buscar__q').value || '';
+  const encontrar = (texto, consulta) => {
+    const pq = plegar(consulta).t;
+    if (!pq) return [];
+    if (plegado.texto !== texto) plegado = { texto, p: plegar(texto) };
+    const { t, idx } = plegado.p;
+    const out = [];
+    for (let i = t.indexOf(pq); i !== -1 && out.length < 5000; i = t.indexOf(pq, i + pq.length)) {
+      out.push([idx[i], idx[i + pq.length]]);
+    }
+    return out;
+  };
+
+  const correr = () => {
+    for (const t of capa.children) t.style.transform = `translateY(${-ta.scrollTop}px)`;
+  };
+
+  const armarTira = () => {
+    const t = document.createElement('div');
+    t.className = 'ub-hallazgos__tira';
+    const v = ta.value;
+    let desde = 0;
+    marcas = hallados.map(([a, b]) => {
+      if (a > desde) t.append(v.slice(desde, a));
+      const m = document.createElement('mark');
+      m.className = 'ub-hallazgo';
+      m.textContent = v.slice(a, b);
+      m.dataset.desde = a;
+      t.append(m);
+      desde = b;
+      return m;
+    });
+    t.append(v.slice(desde) || '​');
+    return t;
+  };
+
+  const contar = () => {
+    if (!barra) return;
+    const n = hallados.length;
+    const sin = !!q() && !n;
+    barra.classList.toggle('is-sin', sin);
+    for (const b of barra.querySelectorAll('[data-ir]')) b.disabled = n === 0;
+    frase(barra.querySelector('.ub-buscar__n'), n ? `${actual + 1} de ${n}` : sin ? 'Sin resultados' : '', { destello: false });
+  };
+
+  const marcar = (i, { mostrar = false } = {}) => {
+    marcas[actual]?.classList.remove('is-actual');
+    actual = i;
+    const m = marcas[i];
+    contar();
+    if (!m) return;
+    m.classList.add('is-actual');
+    if (!mostrar) return;
+    // Que se vea, y no debajo de la barra: si queda afuera, va a un tercio del alto.
+    const lh = parseFloat(getComputedStyle(ta).lineHeight) || 19;
+    const top = m.offsetTop;
+    const st = ta.scrollTop;
+    const tapa = barra ? barra.offsetTop + barra.offsetHeight - ta.offsetTop : 0;
+    if (top < st + tapa || top + lh > st + ta.clientHeight) {
+      ta.scrollTo({ top: Math.max(0, top - ta.clientHeight / 3), behavior: 'smooth' });
+    }
+  };
+
+  const pintar = ({ mostrar = false } = {}) => {
+    raf = 0;
+    if (!ta.isConnected) return;
+    const cs = getComputedStyle(ta);
+    capa.style.transform = `translate(${ta.offsetLeft + ta.clientLeft}px, ${ta.offsetTop + ta.clientTop}px)`;
+    capa.style.width = `${ta.clientWidth}px`;
+    capa.style.height = `${ta.clientHeight}px`;
+    const texto = ta.value;
+    const consulta = barra ? q() : '';
+    const clave = [ta.clientWidth, cs.fontSize, cs.paddingLeft].join('|');
+    if (texto === pintado.texto && consulta === pintado.q && clave === pintado.clave) return correr();
+
+    const antes = hallados[actual]?.[0];
+    const soloLaBusqueda = texto === pintado.texto && clave === pintado.clave;
+    // Dónde quedan ahora las que ya estaban: si cambió el texto, se corren con él.
+    const ya = new Set(pintado.texto == null ? []
+      : hallados.map(([a]) => (texto === pintado.texto ? a : moverCursor(pintado.texto, texto, a))));
+    hallados = encontrar(texto, consulta);
+    const nuevas = new Set(hallados.map(([a]) => a));
+
+    // Las que siguen se quedan quietas y las nuevas entran. Si cambió solo lo
+    // buscado, las que ya no están se esfuman en un calco donde estaban; si
+    // cambió el texto, se fueron con él.
+    const vieja = tira;
+    tira = armarTira();
+    for (const p of ESPEJAR) tira.style[p] = cs[p];
+    tira.style.width = `${ta.clientWidth}px`;
+    for (const m of marcas) if (!ya.has(+m.dataset.desde)) m.classList.add('is-nueva');
+    if (vieja) {
+      const sale = soloLaBusqueda && [...vieja.children].some((m) => !nuevas.has(+m.dataset.desde));
+      if (sale) {
+        for (const m of vieja.querySelectorAll('.ub-hallazgo')) {
+          m.classList.remove('is-nueva');
+          if (nuevas.has(+m.dataset.desde)) m.classList.add('is-sigue');
+        }
+        exit(vieja, { fallback: 200 });
+      } else vieja.remove();
+    }
+    capa.append(tira);
+    pintado = { texto, q: consulta, clave };
+    correr();
+
+    // La marcada: si cambió lo buscado, la primera desde el ancla; si cambió
+    // el texto, la que estaba (o la que le sigue).
+    const desde = soloLaBusqueda ? ancla : antes ?? ancla;
+    let i = hallados.findIndex(([a]) => a >= desde);
+    if (i === -1) i = hallados.length ? 0 : -1;
+    actual = -1;
+    marcar(i, { mostrar: mostrar || soloLaBusqueda });
+  };
+  const pedir = () => { if (!raf) raf = requestAnimationFrame(() => pintar()); };
+
+  const ir = (paso) => {
+    if (!hallados.length) return;
+    const i = (Math.max(actual, 0) + paso + hallados.length) % hallados.length;
+    ancla = hallados[i][0];
+    marcar(i, { mostrar: true });
+  };
+
+  const abrir = () => {
+    // Lo seleccionado en un solo renglón es lo que se busca; si no, lo último.
+    const { selectionStart: a, selectionEnd: b, value: v } = ta;
+    const sel = document.activeElement === ta && b > a && b - a <= 200 ? v.slice(a, b) : '';
+    if (!barra) {
+      ancla = a;
+      barra = document.createElement('div');
+      barra.className = 'ub-buscar';
+      barra.setAttribute('role', 'search');
+      barra.innerHTML = `${Icons.svg('search')}
+        <input class="ub-buscar__q" spellcheck="false" placeholder="Buscar" aria-label="Buscar en el borrador">
+        <span class="ub-buscar__n"></span>
+        <button class="ox-iconbtn ox-iconbtn--sm" data-ir="-1" aria-label="Anterior" data-tip="Anterior" data-tip-key="Shift+Enter" data-tip-side="bottom" disabled>${Icons.svg('chevronUp')}</button>
+        <button class="ox-iconbtn ox-iconbtn--sm" data-ir="1" aria-label="Siguiente" data-tip="Siguiente" data-tip-key="Enter" data-tip-side="bottom" disabled>${Icons.svg('chevronDown')}</button>
+        <button class="ox-iconbtn ox-iconbtn--sm" data-cerrar aria-label="Cerrar" data-tip="Cerrar" data-tip-key="Esc" data-tip-side="bottom">${Icons.svg('close')}</button>`;
+      const input = barra.querySelector('.ub-buscar__q');
+      input.value = S.buscado;
+      input.addEventListener('input', () => { S.buscado = input.value; pintar(); });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); ir(e.shiftKey ? -1 : 1); }
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cerrar(); }
+      });
+      barra.addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        if (b.hasAttribute('data-cerrar')) cerrar();
+        else { ir(Number(b.dataset.ir)); input.focus({ preventScroll: true }); }
+      });
+      caja.append(barra);
+    }
+    const input = barra.querySelector('.ub-buscar__q');
+    if (sel && !sel.includes('\n')) { input.value = S.buscado = sel; ancla = a; }
+    input.focus({ preventScroll: true });
+    input.select();
+    pintar({ mostrar: true });
+  };
+
+  function cerrar() {
+    if (!barra) return;
+    const el = barra;
+    barra = null;
+    exit(el, { fallback: 200 });
+    const h = hallados[actual];
+    hallados = [];
+    marcas = [];
+    actual = -1;
+    pintado = { texto: null, q: null, clave: '' };
+    if (tira) { exit(tira, { fallback: 200 }); tira = null; }
+    ta.focus({ preventScroll: true });
+    if (h) ta.setSelectionRange(h[0], h[1]);
+  }
+
+  // Lo que cambie el texto, la letra o el ancho mueve las marcas.
+  const siAbierto = () => { if (barra) pedir(); };
+  ta.addEventListener('input', siAbierto);
+  ta.addEventListener('scroll', correr);
+  ta.addEventListener('transitionend', (e) => { if (e.propertyName === 'font-size') siAbierto(); });
+  const ro = new ResizeObserver(siAbierto);
+  ro.observe(ta);
+  alDia.push(siAbierto);
+
+  Router.onLeave(() => {
+    cancelAnimationFrame(raf);
+    ro.disconnect();
+    alDia = alDia.filter((fn) => fn !== siAbierto);
+    buscar = null;
+  });
+
+  return { abrir, cerrar, ir, get abierto() { return !!barra; } };
+}
+
 function viewBorrador() {
   paint(`<div class="ub-borr ox-grow">
     <textarea class="ox-textarea ox-textarea--mono ub-borr__text" id="borr" spellcheck="false"
@@ -630,6 +864,7 @@ function viewBorrador() {
   const ta = $('borr');
   Icons.mount(ta.parentElement);
   ta.value = S.borrador;
+  buscar = buscador(ta);
   numerosDeLinea(ta);
   cursorBloque(ta);
   syncBorrador();
@@ -860,6 +1095,18 @@ function onKey(e) {
   if (e.key === 'Escape') {
     if (qr) closeQr();
     else if (lightbox) closeLightbox();
+    else if (buscar?.abierto) buscar.cerrar();
+    return;
+  }
+  // Ctrl+F busca en el Borrador; F3 y Shift+F3 siguen buscando con la barra abierta.
+  if (buscar && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyF') {
+    e.preventDefault();
+    buscar.abrir();
+    return;
+  }
+  if (buscar?.abierto && e.key === 'F3' && !e.ctrlKey && !e.altKey) {
+    e.preventDefault();
+    buscar.ir(e.shiftKey ? -1 : 1);
     return;
   }
   // Ctrl 1, 2 y 3 van a cada pestaña, en el orden del segmentado. Sale del
@@ -1070,8 +1317,8 @@ function wireDrop() {
     if (--depth <= 0) { depth = 0; hide(); }
   });
   document.addEventListener('drop', (e) => {
-    // Texto arrastrado al Borrador: que lo suelte el propio campo.
-    if (!isFiles(e) && e.target.closest?.('textarea')) return;
+    // Texto arrastrado al Borrador (o al buscador): que lo suelte el propio campo.
+    if (!isFiles(e) && e.target.closest?.('textarea, input')) return;
     e.preventDefault();   // sin esto Electron navega al archivo soltado
     depth = 0;
     hide();

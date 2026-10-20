@@ -471,5 +471,101 @@
   height: 0;
 }
 
+/* Buscar en el Borrador (Ctrl+F): la barra flota arriba a la derecha del
+   campo, al lado de la scrollbar (10 px), y entra y sale como un popover.
+   El canto se aclara con el foco adentro: ese es su anillo. */
+.ub-buscar {
+  position: absolute;
+  top: var(--ox-2);
+  right: calc(10px + var(--ox-2));
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 32px;
+  max-width: calc(100% - 2 * var(--ox-4));
+  padding: 0 var(--ox-1) 0 var(--ox-3);
+  border-radius: var(--ox-r-md);
+  background: var(--ox-s3);
+  --ox-surface: var(--ox-s3);
+  box-shadow: var(--ox-hairline), var(--ox-e3);
+  transform-origin: top right;
+  animation: ox-pop-in var(--ox-t-2) var(--ox-ease) both;
+  transition: box-shadow var(--ox-t-2) var(--ox-ease-soft);
+}
+.ub-buscar:focus-within { box-shadow: inset 0 0 0 1px var(--ox-line-3), var(--ox-e3); }
+.ub-buscar[data-state='closing'] { animation: ox-pop-out var(--ox-t-1) var(--ox-ease-in) both; }
+.ub-buscar > .ox-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--ox-text-4);
+  transition: color var(--ox-t-2) var(--ox-ease-soft);
+}
+.ub-buscar:focus-within > .ox-icon { color: var(--ox-text-2); }
+.ub-buscar__q {
+  flex: 1 1 auto;
+  width: 180px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--ox-2);
+  border: 0;
+  background: transparent;
+  color: var(--ox-text);
+  font: inherit;
+  font-size: var(--ox-fs-13);
+  user-select: text;
+}
+.ub-buscar__q::placeholder { color: var(--ox-text-4); }
+.ub-buscar__q:focus-visible { box-shadow: none; }   /* el anillo es el canto de la barra */
+/* Ancho fijo: «Sin resultados» y «3 de 12» no mueven la barra. */
+.ub-buscar__n {
+  flex: none;
+  width: 88px;
+  padding-right: var(--ox-1);
+  text-align: right;
+  white-space: nowrap;
+  font-size: var(--ox-fs-11);
+  font-variant-numeric: tabular-nums;
+  color: var(--ox-text-3);
+  transition: color var(--ox-t-1) var(--ox-ease-soft);
+}
+.ub-buscar.is-sin .ub-buscar__n { color: var(--ox-danger); }
+
+/* Lo encontrado: una capa encima del campo con el mismo texto, transparente,
+   y cada coincidencia teñida. La actual va como el cursor: violeta entero con
+   la letra en oscuro. Las que llegan se tiñen de a poco; las que se van se
+   esfuman en el calco de la tira vieja. */
+.ub-hallazgos {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ub-hallazgos__tira {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  color: transparent;
+}
+.ub-hallazgos__tira[data-state='closing'] { animation: ox-fade-out var(--ox-t-1) var(--ox-ease-both) both; }
+.ub-hallazgo {
+  border-radius: 2px;
+  background: rgb(var(--ox-accent-rgb) / .28);
+  color: transparent;
+  transition: background-color var(--ox-t-1) var(--ox-ease-soft),
+              color var(--ox-t-1) var(--ox-ease-soft),
+              box-shadow var(--ox-t-1) var(--ox-ease-soft);
+}
+.ub-hallazgo.is-actual {
+  background: var(--ox-accent);
+  color: var(--ox-accent-ink);
+  box-shadow: 0 0 7px rgb(var(--ox-accent-rgb) / .55);
+}
+.ub-hallazgo.is-nueva { animation: ub-hallazgo-entra var(--ox-t-2) var(--ox-ease-soft); }
+@keyframes ub-hallazgo-entra { from { background-color: transparent; box-shadow: none; color: transparent; } }
+.ub-hallazgo.is-sigue { visibility: hidden; }
+
 /* La purga se pliega adentro de su grupo, que tiene otro espacio entre botones. */
 #files-tools { --ox-plegable-gap: var(--ox-1); }

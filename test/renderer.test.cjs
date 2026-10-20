@@ -570,6 +570,89 @@ app.whenReady().then(async () => {
   ctrl('K');
   await sleep(150);
   ok('con una selección corta todos los renglones que toca', (await valor()) === '' && global.__umbralCopiado === 'uno\ntres\n', JSON.stringify(global.__umbralCopiado));
+  // Ctrl+F: busca sin mayúsculas ni tildes, marca la actual, Enter sigue y Esc la deja seleccionada.
+  const BUSCA = 'Canción uno\nla cancion dos\notra CANCIÓN\n' + Array.from({ length: 80 }, (_, i) => `relleno ${i}`).join('\n') + '\nla última canción';
+  await js(`(() => { const ta = document.getElementById('borr'); ta.focus(); ta.value = ${JSON.stringify(BUSCA)};
+    ta.dispatchEvent(new Event('input', { bubbles: true })); ta.setSelectionRange(0, 0); ta.scrollTop = 0; })()`);
+  await sleep(150);
+  ctrl('F');
+  await sleep(300);
+  const pulsar = (keyCode, modifiers = []) => {
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
+  };
+  const buscando = () => js(`(() => { const b = document.querySelector('.ub-buscar:not([data-state="closing"])');
+    const tira = document.querySelector('.ub-hallazgos__tira:not([data-state="closing"])');
+    const ms = tira ? [...tira.querySelectorAll('.ub-hallazgo')] : [];
+    const act = ms.find((m) => m.classList.contains('is-actual'));
+    const ta = document.getElementById('borr');
+    return { abierta: !!b, foco: document.activeElement?.className || '',
+      n: b ? [...b.querySelectorAll('.ub-buscar__n > :not(.ox-swap-out)')].map((e) => e.textContent).join('') || b.querySelector('.ub-buscar__n').textContent : '',
+      marcas: ms.map((m) => m.textContent), actual: ms.indexOf(act), scroll: ta.scrollTop,
+      actualY: act ? act.getBoundingClientRect().top - ta.getBoundingClientRect().top : null, alto: ta.clientHeight,
+      tinta: act ? getComputedStyle(act).backgroundColor : '' }; })()`);
+  const escribir = async (texto) => {
+    await js(`(() => { const i = document.querySelector('.ub-buscar__q'); i.value = ${JSON.stringify(texto)};
+      i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await sleep(450);
+  };
+  let f = await buscando();
+  ok('Ctrl+F abre la barra con el foco adentro', f.abierta && /ub-buscar__q/.test(f.foco), JSON.stringify(f));
+  await escribir('cancion');
+  f = await buscando();
+  ok('encuentra sin mayúsculas ni tildes', f.marcas.join('|') === 'Canción|cancion|CANCIÓN|canción', f.marcas.join('|'));
+  ok('la actual es la primera desde el cursor', f.actual === 0 && f.n === '1 de 4', `${f.actual} · ${f.n}`);
+  ok('la actual va en violeta entero', /157, 123, 255/.test(f.tinta) && !/, 0\.\d/.test(f.tinta), f.tinta);
+  // La marca cae sobre su palabra: la segunda («cancion» de «la cancion») empieza 3 letras adentro del renglón 2.
+  const geo = await js(`(() => { const ta = document.getElementById('borr'), t = ta.getBoundingClientRect(), cs = getComputedStyle(ta);
+    const ms = [...document.querySelectorAll('.ub-hallazgos__tira:not([data-state]) .ub-hallazgo')].map((m) => m.getBoundingClientRect());
+    return { x0: ms[0].left - t.left, x1: ms[1].left - t.left, y0: ms[0].top - t.top, y1: ms[1].top - t.top,
+      pad: parseFloat(cs.paddingLeft), lh: parseFloat(cs.lineHeight), w: ms[0].width / 7 }; })()`);
+  ok('cada marca cae sobre su palabra', Math.abs(geo.x0 - geo.pad) < 1 && Math.abs(geo.x1 - (geo.pad + 3 * geo.w)) < 1.5
+    && Math.abs(geo.y1 - geo.y0 - geo.lh) < 1, JSON.stringify(geo));
+  pulsar('Enter');
+  await sleep(200);
+  f = await buscando();
+  ok('Enter va a la siguiente', f.actual === 1 && f.n === '2 de 4', `${f.actual} · ${f.n}`);
+  pulsar('Enter', ['shift']);
+  pulsar('Enter', ['shift']);
+  await sleep(700);
+  f = await buscando();
+  ok('Shift+Enter vuelve, y de la primera da la vuelta a la última', f.actual === 3 && f.n === '4 de 4', `${f.actual} · ${f.n}`);
+  ok('y el campo se corre para que se vea', f.scroll > 0 && f.actualY >= 0 && f.actualY < f.alto, JSON.stringify(f));
+  pulsar('F3');
+  await sleep(700);
+  f = await buscando();
+  ok('F3 sigue buscando', f.actual === 0, String(f.actual));
+  await escribir('canciónx');
+  f = await buscando();
+  ok('sin nada: «Sin resultados» y las flechas apagadas', f.marcas.length === 0 && f.n === 'Sin resultados'
+    && (await js(`[...document.querySelectorAll('.ub-buscar [data-ir]')].every((b) => b.disabled)`)), f.n);
+  await escribir('dos');
+  f = await buscando();
+  ok('una sola', f.marcas.join() === 'dos' && f.n === '1 de 1', `${f.marcas} · ${f.n}`);
+  const cortesB = await js(AUDITAR_ANILLOS);
+  ok('ningún anillo de la barra se corta', cortesB.length === 0, '\n      ' + cortesB.join('\n      '));
+  await js(`document.querySelector('.ub-buscar__q').focus()`);
+  pulsar('Escape');
+  await sleep(400);
+  const cerrada = await js(`(() => { const ta = document.getElementById('borr');
+    return { barra: !!document.querySelector('.ub-buscar'), marcas: document.querySelectorAll('.ub-hallazgo').length,
+      foco: document.activeElement === ta, sel: ta.value.slice(ta.selectionStart, ta.selectionEnd) }; })()`);
+  ok('Esc cierra la barra y se lleva las marcas', !cerrada.barra && cerrada.marcas === 0, JSON.stringify(cerrada));
+  ok('y deja seleccionada la que estaba marcada', cerrada.foco && cerrada.sel === 'dos', JSON.stringify(cerrada));
+  ctrl('F');
+  await sleep(300);
+  ok('al abrir de nuevo, busca lo seleccionado', (await js(`document.querySelector('.ub-buscar__q').value`)) === 'dos');
+  // Con la barra abierta, lo que se escribe en el campo mueve las marcas.
+  await js(`(() => { const ta = document.getElementById('borr'); ta.value = 'dos ' + ta.value;
+    ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await sleep(200);
+  ok('lo escrito en el campo se busca en vivo', (await buscando()).marcas.length === 2);
+  await tap('[data-cerrar]');
+  await sleep(400);
+  ok('la cruz también cierra', !(await js(`!!document.querySelector('.ub-buscar')`)));
+
   await js(`(() => { const ta = document.getElementById('borr'); ta.value = ${JSON.stringify(TXT)};
     ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await sleep(1800);   // que se vaya el aviso del Ctrl+K
