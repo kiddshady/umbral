@@ -344,6 +344,7 @@
    Un campo que ocupa la vista entera y, abajo, el pie con el conteo y las dos
    acciones. No se estira a mano: ya llena el lugar. */
 .ub-borr {
+  position: relative;   /* el cursor de bloque se ubica contra esta caja */
   display: flex;
   flex-direction: column;
   gap: var(--ox-3);
@@ -354,6 +355,7 @@
   flex: 1;
   min-height: 0;
   resize: none;
+  caret-color: transparent;   /* el cursor es el bloque de abajo */
   padding: var(--ox-3) var(--ox-4);
   font-size: var(--ub-borr-fs, 12px);   /* Ctrl + / Ctrl -; el alto de renglón la sigue */
   line-height: 1.6;
@@ -381,5 +383,65 @@
 @keyframes ub-remoto {
   from { box-shadow: inset 0 0 0 1px var(--ox-accent), 0 0 0 3px var(--ox-wash-2); }
 }
+/* El cursor de bloque: el de NTX en el violeta de Umbral. El bloque es el
+   ::before, más bajo que el renglón y centrado en él, y la letra va arriba en
+   la tinta del acento. Parpadea a 1,1 s de golpe, como una terminal, y el
+   bloque se apaga junto con su aureola (si no, queda el halo solo, un fantasma).
+   No viaja entre letras: salta, como en NTX. Lo que sí se funde es aparecer,
+   desaparecer y pasar de encendido a quieto. */
+.ub-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  transition: opacity var(--ox-t-1) var(--ox-ease-soft);
+}
+.ub-cursor::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  height: 1.3em;
+  transform: translateY(-50%);
+  background: var(--ox-accent);
+  box-shadow: 0 0 7px var(--ox-accent);
+  transition: background-color var(--ox-t-2) var(--ox-ease-soft),
+              box-shadow var(--ox-t-2) var(--ox-ease-soft);
+}
+.ub-cursor__letra {
+  position: relative;
+  display: block;
+  white-space: pre;
+  color: var(--ox-accent-ink);
+}
+.ub-cursor.is-latiendo::before { animation: ub-cursor-bloque 1.1s step-end infinite; }
+.ub-cursor.is-latiendo .ub-cursor__letra { animation: ub-cursor-letra 1.1s step-end infinite; }
+@keyframes ub-cursor-bloque { 50% { opacity: 0; } }
+@keyframes ub-cursor-letra { 50% { color: transparent; } }
+/* Sin foco (otra ventana adelante, o un botón): el mismo bloque apagado y
+   quieto, y la letra del campo se lee a través. */
+.ub-cursor.is-quieto::before {
+  animation: none;
+  background: color-mix(in srgb, var(--ox-accent) 30%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--ox-accent) 22%, transparent);
+}
+.ub-cursor.is-quieto .ub-cursor__letra { animation: none; color: transparent; }
+.ub-cursor.is-oculto { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .ub-cursor.is-latiendo::before, .ub-cursor.is-latiendo .ub-cursor__letra { animation: none; }
+}
+/* El espejo con el que se mide dónde cae el cursor: misma letra y ancho que
+   el campo, invisible. */
+.ub-cursor__espejo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+  height: 0;
+}
+
 /* La purga se pliega adentro de su grupo, que tiene otro espacio entre botones. */
 #files-tools { --ox-plegable-gap: var(--ox-1); }

@@ -363,6 +363,110 @@ function syncBorrador() {
   clear.dataset.tip = vacio ? 'Ya está vacío' : 'Borrar todo el texto';
   // Sin destello: con cada tecla se reiniciaba y al dejar de escribir se cortaba.
   frase($('borr-info'), esc(borradorInfo()), { destello: false });
+  cursorAlDia();
+}
+
+/* El cursor del Borrador: un bloque violeta con aureola, el mismo de NTX. Un
+   textarea no tiene cursor de bloque, así que el nativo va transparente y el
+   bloque se dibuja encima. Para saber dónde cae, un espejo invisible con la
+   misma letra, el mismo ancho y los mismos cortes de renglón repite el texto
+   hasta el cursor, y una marca al final dice la posición. Adentro del bloque
+   va la letra que tapa, en oscuro; en la mitad apagada del parpadeo se ve la
+   del campo. Con una selección no hay bloque: se ve la selección. */
+let cursorAlDia = () => {};
+
+const ESPEJAR = ['fontFamily', 'fontSize', 'fontWeight', 'letterSpacing', 'lineHeight', 'tabSize',
+  'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'whiteSpace', 'overflowWrap', 'wordBreak'];
+const LETRA_CURSOR = ['fontFamily', 'fontSize', 'fontWeight', 'letterSpacing'];
+
+function cursorBloque(ta) {
+  const caja = ta.parentElement;
+  const cur = document.createElement('div');
+  cur.className = 'ub-cursor';
+  cur.setAttribute('aria-hidden', 'true');
+  const letra = document.createElement('span');
+  letra.className = 'ub-cursor__letra';
+  cur.append(letra);
+  const espejo = document.createElement('div');
+  espejo.className = 'ub-cursor__espejo';
+  espejo.setAttribute('aria-hidden', 'true');
+  caja.append(espejo, cur);
+
+  let raf = 0;
+  let antes = '';
+  const pintar = () => {
+    raf = 0;
+    if (!ta.isConnected) return;
+    const cs = getComputedStyle(ta);
+    for (const p of ESPEJAR) espejo.style[p] = cs[p];
+    for (const p of LETRA_CURSOR) cur.style[p] = cs[p];
+    espejo.style.width = `${ta.clientWidth}px`;
+
+    const v = ta.value;
+    const pos = ta.selectionEnd;
+    const ch = v[pos];
+    const real = ch !== undefined && ch !== '\n';
+    espejo.textContent = v.slice(0, pos);
+    const marca = document.createElement('span');
+    marca.textContent = real ? ch : '​';   // al final de un renglón no hay letra: solo el lugar
+    const ancho = document.createElement('span');
+    ancho.textContent = '0';                     // mono: todas miden lo mismo
+    espejo.append(marca, ancho);
+
+    const fs = parseFloat(cs.fontSize);
+    const lh = parseFloat(cs.lineHeight) || fs * 1.6;
+    const pad = parseFloat(cs.paddingTop);
+    const e = espejo.getBoundingClientRect();
+    const m = marca.getBoundingClientRect();
+    // El renglón sale de dónde cae la marca; la caja de una letra es más baja
+    // que el renglón, así que se toma su centro.
+    const renglon = pad + Math.floor((m.top + m.height / 2 - e.top - pad) / lh) * lh;
+    const x = ta.offsetLeft + ta.clientLeft + (m.left - e.left);
+    const y = ta.offsetTop + ta.clientTop + renglon - ta.scrollTop;
+    const w = real ? m.width || ancho.getBoundingClientRect().width : ancho.getBoundingClientRect().width;
+    cur.style.transform = `translate(${x}px, ${y}px)`;
+    cur.style.width = `${w}px`;
+    cur.style.height = `${lh}px`;
+    letra.style.lineHeight = `${lh}px`;
+    // Vacío: el bloque se para sobre la primera letra del texto de ayuda.
+    letra.textContent = real ? ch : (!v && ta.placeholder ? ta.placeholder[0] : '');
+
+    const visible = renglon >= ta.scrollTop - 1 && renglon + lh <= ta.scrollTop + ta.clientHeight + 1;
+    const enFoco = document.activeElement === ta && document.hasFocus();
+    cur.classList.toggle('is-oculto', ta.selectionStart !== ta.selectionEnd || !visible);
+    cur.classList.toggle('is-quieto', !enFoco);
+    // Si se movió, el parpadeo vuelve a empezar encendido: mientras se escribe no titila.
+    const ahora = `${x},${y},${v.length}`;
+    if (enFoco && ahora !== antes) {
+      cur.classList.remove('is-latiendo');
+      void cur.offsetWidth;
+      cur.classList.add('is-latiendo');
+    }
+    antes = ahora;
+  };
+  const pedir = () => { if (!raf) raf = requestAnimationFrame(pintar); };
+
+  const eventos = ['input', 'scroll', 'focus', 'blur', 'select'];
+  for (const ev of eventos) ta.addEventListener(ev, pedir);
+  // La letra cambia de tamaño con transición: al terminar se mide de nuevo.
+  ta.addEventListener('transitionend', (e) => { if (e.propertyName === 'font-size') pedir(); });
+  document.addEventListener('selectionchange', pedir);
+  window.addEventListener('focus', pedir);
+  window.addEventListener('blur', pedir);
+  const ro = new ResizeObserver(pedir);
+  ro.observe(ta);
+  document.fonts?.ready.then(pedir);
+  cursorAlDia = pedir;
+  pedir();
+
+  Router.onLeave(() => {
+    cancelAnimationFrame(raf);
+    document.removeEventListener('selectionchange', pedir);
+    window.removeEventListener('focus', pedir);
+    window.removeEventListener('blur', pedir);
+    ro.disconnect();
+    cursorAlDia = () => {};
+  });
 }
 
 function viewBorrador() {
@@ -379,6 +483,7 @@ function viewBorrador() {
   const ta = $('borr');
   Icons.mount(ta.parentElement);
   ta.value = S.borrador;
+  cursorBloque(ta);
   syncBorrador();
 
   ta.addEventListener('input', () => {
@@ -494,6 +599,7 @@ function limpiarBorrador() {
       ta.value = S.borrador;
       ta.classList.remove('is-limpiando');
       ta.focus({ preventScroll: true });
+      cursorAlDia();
     }, 180);
   }
   syncBorrador();

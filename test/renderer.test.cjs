@@ -437,6 +437,37 @@ app.whenReady().then(async () => {
   await js(`(() => { const ta = document.getElementById('borr'); ta.value = ${JSON.stringify(TXT)};
     ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await sleep(450);
+
+  // El cursor de bloque: violeta con aureola, parado sobre la letra que tapa.
+  const cursorEn = async (a, b = a) => {
+    await js(`document.getElementById('borr').setSelectionRange(${a}, ${b})`);
+    await sleep(120);
+    return js(`(() => { const ta = document.getElementById('borr'), c = document.querySelector('.ub-cursor');
+      const r = c.getBoundingClientRect(), t = ta.getBoundingClientRect(), antes = getComputedStyle(c, '::before');
+      return { caret: getComputedStyle(ta).caretColor, x: r.left - t.left, y: r.top - t.top, w: r.width,
+        letra: c.textContent, oculto: c.classList.contains('is-oculto'), quieto: c.classList.contains('is-quieto'),
+        late: c.classList.contains('is-latiendo'), sombra: antes.boxShadow, fondo: antes.backgroundColor,
+        pad: parseFloat(getComputedStyle(ta).paddingLeft), lh: parseFloat(getComputedStyle(ta).lineHeight) }; })()`);
+  };
+  const c0 = await cursorEn(0);
+  ok('el cursor nativo es transparente', /rgba\(0, 0, 0, 0\)|transparent/.test(c0.caret), c0.caret);
+  ok('el bloque arranca sobre la primera letra', c0.letra === 'g' && !c0.oculto && Math.abs(c0.x - c0.pad) < 1, JSON.stringify(c0));
+  ok('parpadea con foco', c0.late && !c0.quieto, JSON.stringify(c0));
+  ok('es violeta y con aureola', /157, 123, 255/.test(c0.fondo) && /157, 123, 255.*7px|7px.*157, 123, 255/.test(c0.sombra), `${c0.fondo} · ${c0.sombra}`);
+  const c4 = await cursorEn(4);
+  ok('cuatro letras más allá, cuatro anchos más allá', c4.letra === 'p' && Math.abs(c4.x - (c0.x + 4 * c0.w)) < 1.5, `${c4.x} vs ${c0.x + 4 * c0.w}`);
+  const c21 = await cursorEn(21);
+  ok('en el segundo renglón baja un renglón', c21.letra === 'h' && Math.abs(c21.y - c0.y - c0.lh) < 1 && Math.abs(c21.x - c0.x) < 1, JSON.stringify(c21));
+  const cFin = await cursorEn(TXT.length);
+  ok('al final no tapa ninguna letra', cFin.letra === '' && !cFin.oculto, JSON.stringify(cFin));
+  const cSel = await cursorEn(0, 5);
+  ok('con una selección el bloque se esconde', cSel.oculto);
+  await js(`document.getElementById('borr').blur()`);
+  await sleep(120);
+  const cBlur = await js(`document.querySelector('.ub-cursor').className`);
+  ok('sin foco queda quieto', /is-quieto/.test(cBlur), cBlur);
+  await js(`(() => { const ta = document.getElementById('borr'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); })()`);
+
   await tap('#borr-copy');
   await sleep(250);
   ok('Copiar todo manda el texto entero', global.__umbralCopiado === TXT, JSON.stringify(global.__umbralCopiado));
