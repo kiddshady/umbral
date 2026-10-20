@@ -344,7 +344,8 @@
    Un campo que ocupa la vista entera y, abajo, el pie con el conteo y las dos
    acciones. No se estira a mano: ya llena el lugar. */
 .ub-borr {
-  position: relative;   /* el cursor de bloque se ubica contra esta caja */
+  --ub-borr-num: 2;     /* dígitos de la columna de números; los cambia el JS */
+  position: relative;   /* el cursor de bloque y los números se ubican contra esta caja */
   display: flex;
   flex-direction: column;
   gap: var(--ox-3);
@@ -356,7 +357,9 @@
   min-height: 0;
   resize: none;
   caret-color: transparent;   /* el cursor es el bloque de abajo */
-  padding: var(--ox-3) var(--ox-4);
+  /* A la izquierda, lugar para los números: su margen, los dígitos y el aire
+     hasta el texto. `ch` es el ancho de una letra de la mono. */
+  padding: var(--ox-3) var(--ox-4) var(--ox-3) calc(var(--ox-3) + var(--ub-borr-num) * 1ch + var(--ox-4));
   font-size: var(--ub-borr-fs, 12px);   /* Ctrl + / Ctrl -; el alto de renglón la sigue */
   line-height: 1.6;
   white-space: pre-wrap;
@@ -430,8 +433,33 @@
 @media (prefers-reduced-motion: reduce) {
   .ub-cursor.is-latiendo::before, .ub-cursor.is-latiendo .ub-cursor__letra { animation: none; }
 }
-/* El espejo con el que se mide dónde cae el cursor: misma letra y ancho que
-   el campo, invisible. */
+/* Los números de línea, en la columna del margen izquierdo. Tenues; el del
+   renglón del cursor, más claro. Un número nuevo entra fundiéndose por color
+   (no por opacidad, que le saca el ClearType). */
+.ub-lineas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(var(--ox-3) + var(--ub-borr-num) * 1ch);
+  overflow: hidden;
+  pointer-events: none;
+}
+.ub-lineas__n {
+  position: absolute;
+  top: 0;
+  left: var(--ox-3);
+  right: 0;
+  text-align: right;
+  color: var(--ox-text-4);
+  font-variant-numeric: tabular-nums;
+  transition: color var(--ox-t-1) var(--ox-ease-soft);
+  animation: ub-lineas-n var(--ox-t-2) var(--ox-ease-soft);
+}
+.ub-lineas__n.is-actual { color: var(--ox-text-2); }
+@keyframes ub-lineas-n { from { color: transparent; } }
+
+/* El espejo con el que se mide dónde cae el cursor (y cada número): misma
+   letra y ancho que el campo, invisible. */
 .ub-cursor__espejo {
   position: absolute;
   top: 0;

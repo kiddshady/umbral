@@ -468,6 +468,38 @@ app.whenReady().then(async () => {
   ok('sin foco queda quieto', /is-quieto/.test(cBlur), cBlur);
   await js(`(() => { const ta = document.getElementById('borr'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); })()`);
 
+  // Los números de línea: uno por renglón escrito, a la altura de su renglón.
+  const numeros = async (texto, pos) => {
+    if (texto !== undefined) {
+      await js(`(() => { const ta = document.getElementById('borr'); ta.value = ${JSON.stringify(texto)};
+        ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    }
+    if (pos !== undefined) await js(`document.getElementById('borr').setSelectionRange(${pos}, ${pos})`);
+    await sleep(150);
+    return js(`(() => { const ta = document.getElementById('borr'), t = ta.getBoundingClientRect();
+      const ns = [...document.querySelectorAll('.ub-lineas__n')];
+      const col = document.querySelector('.ub-lineas').getBoundingClientRect();
+      return { n: ns.map((e) => e.textContent), y: ns.map((e) => e.getBoundingClientRect().top - t.top),
+        actual: ns.findIndex((e) => e.classList.contains('is-actual')), colDer: col.right - t.left,
+        pad: parseFloat(getComputedStyle(ta).paddingLeft), lh: parseFloat(getComputedStyle(ta).lineHeight) }; })()`);
+  };
+  const n0 = await numeros(undefined, 21);
+  ok('un número por renglón', n0.n.join() === '1,2', n0.n.join());
+  ok('cada número a la altura de su renglón', Math.abs(n0.y[0] - c0.y) < 1 && Math.abs(n0.y[1] - c21.y) < 1, `${n0.y} vs ${c0.y},${c21.y}`);
+  ok('el del renglón del cursor se marca', n0.actual === 1, String(n0.actual));
+  ok('la columna no pisa el texto', n0.colDer < n0.pad, `${n0.colDer} vs ${n0.pad}`);
+  const largo = 'corto\n' + 'palabra '.repeat(120) + '\nfin';
+  const n1 = await numeros(largo, 0);
+  ok('un renglón que se parte lleva un solo número', n1.n.join() === '1,2,3' && n1.y[2] - n1.y[1] >= 2 * n1.lh - 1, JSON.stringify(n1.y));
+  ok('el actual sigue al cursor', n1.actual === 0, String(n1.actual));
+  const n2 = await numeros(Array.from({ length: 120 }, (_, i) => `l${i}`).join('\n'), 0);
+  ok('con 100 renglones o más, la columna se ensancha', n2.n.length === 120 && n2.pad > n0.pad && n2.colDer < n2.pad, `${n2.pad} vs ${n0.pad}`);
+  await js(`document.getElementById('borr').scrollTop = 200`);
+  await sleep(100);
+  const n3 = await numeros();
+  ok('los números acompañan el scroll', Math.abs((n2.y[0] - n3.y[0]) - 200) < 1, `${n2.y[0]} → ${n3.y[0]}`);
+  await numeros(TXT, TXT.length);
+
   await tap('#borr-copy');
   await sleep(250);
   ok('Copiar todo manda el texto entero', global.__umbralCopiado === TXT, JSON.stringify(global.__umbralCopiado));
@@ -516,6 +548,31 @@ app.whenReady().then(async () => {
   await sleep(400);
   ok('Ctrl 0 vuelve a 12 px', (await letra()).fs === '12px', (await letra()).fs);
   ok('la ventana sigue sin zoom', win.webContents.getZoomLevel() === 0, String(win.webContents.getZoomLevel()));
+
+  // Ctrl+K corta el renglón, como en nano; seguidos se juntan, y Ctrl+Z lo deshace.
+  const valor = () => js(`document.getElementById('borr').value`);
+  await js(`(() => { const ta = document.getElementById('borr'); ta.focus(); ta.value = 'uno\\ndos\\ntres';
+    ta.dispatchEvent(new Event('input', { bubbles: true })); ta.setSelectionRange(5, 5); })()`);
+  await sleep(100);
+  ctrl('K');
+  await sleep(150);
+  ok('Ctrl+K saca el renglón del cursor', (await valor()) === 'uno\ntres', JSON.stringify(await valor()));
+  ok('y lo deja en el portapapeles', global.__umbralCopiado === 'dos\n', JSON.stringify(global.__umbralCopiado));
+  ctrl('K');
+  await sleep(150);
+  ok('el último renglón se lleva el salto de antes', (await valor()) === 'uno', JSON.stringify(await valor()));
+  ok('dos Ctrl+K seguidos se juntan', global.__umbralCopiado === 'dos\ntres\n', JSON.stringify(global.__umbralCopiado));
+  ok('abajo dice cuántas', /2 líneas cortadas/.test(await js(`document.getElementById('borr-info').textContent`)));
+  ctrl('Z');
+  await sleep(150);
+  ok('Ctrl+Z la devuelve', (await valor()) === 'uno\ntres', JSON.stringify(await valor()));
+  await js(`(() => { const ta = document.getElementById('borr'); ta.setSelectionRange(1, 6); })()`);
+  ctrl('K');
+  await sleep(150);
+  ok('con una selección corta todos los renglones que toca', (await valor()) === '' && global.__umbralCopiado === 'uno\ntres\n', JSON.stringify(global.__umbralCopiado));
+  await js(`(() => { const ta = document.getElementById('borr'); ta.value = ${JSON.stringify(TXT)};
+    ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await sleep(1800);   // que se vaya el aviso del Ctrl+K
 
   // El .txt y el celu: lo de acá llega al disco y al servidor; lo del celu, al campo.
   const TXTF = path.join(DIR, 'borrador.txt');

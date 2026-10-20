@@ -57,6 +57,7 @@ const S = {
   borradorSel: null,   // { start, end, scroll } al irse de la vista, para volver al mismo lugar
   borradorLetra: 12,   // px; se cambia con Ctrl + / Ctrl - / Ctrl 0 y queda en settings
   borradorLetraT: 0,   // cuándo se cambió, para decirlo abajo un rato
+  borradorAviso: null, // { texto, t }: algo que se hizo con una tecla (Ctrl+K), para decirlo abajo un rato
 };
 
 const fmtWhen = (ms) => `${fmtClock(ms)} · ${new Date(ms).toLocaleDateString(locale.tag, { day: '2-digit', month: '2-digit' })}`;
@@ -344,9 +345,14 @@ const DESDE = { celu: 'el celu', archivo: 'el archivo' };
 
 const borradorInfo = () => {
   const d = S.borradorDesde;
-  // Si la letra y un cambio de afuera se pisan, se dice el último.
-  if (Date.now() - S.borradorLetraT < 1600 && !(d && d.t > S.borradorLetraT)) return `Letra de ${S.borradorLetra} px`;
-  if (d && Date.now() - d.t < 2400) return `Cambió desde ${DESDE[d.desde] || 'afuera'}`;
+  // Los avisos de paso (la letra, un Ctrl+K, un cambio de afuera) se dicen un
+  // rato; si se pisan, se dice el último.
+  const aviso = [
+    { t: S.borradorLetraT, dura: 1600, texto: `Letra de ${S.borradorLetra} px` },
+    S.borradorAviso && { t: S.borradorAviso.t, dura: 1600, texto: S.borradorAviso.texto },
+    d && { t: d.t, dura: 2400, texto: `Cambió desde ${DESDE[d.desde] || 'afuera'}` },
+  ].filter((a) => a && Date.now() - a.t < a.dura).sort((a, b) => b.t - a.t)[0];
+  if (aviso) return aviso.texto;
   const n = S.borrador.length;
   if (!n) return 'Se guarda solo y se ve también en Umbral Mobile';
   const lineas = S.borrador.split('\n').length;
@@ -363,8 +369,12 @@ function syncBorrador() {
   clear.dataset.tip = vacio ? 'Ya está vacío' : 'Borrar todo el texto';
   // Sin destello: con cada tecla se reiniciaba y al dejar de escribir se cortaba.
   frase($('borr-info'), esc(borradorInfo()), { destello: false });
-  cursorAlDia();
+  for (const fn of alDia) fn();
 }
+
+/* Lo que se dibuja encima del campo (el cursor, los números de línea) y hay
+   que poner al día cuando el texto cambia por código, sin evento de input. */
+let alDia = [];
 
 /* El cursor del Borrador: un bloque violeta con aureola, el mismo de NTX. Un
    textarea no tiene cursor de bloque, así que el nativo va transparente y el
@@ -373,8 +383,6 @@ function syncBorrador() {
    hasta el cursor, y una marca al final dice la posición. Adentro del bloque
    va la letra que tapa, en oscuro; en la mitad apagada del parpadeo se ve la
    del campo. Con una selección no hay bloque: se ve la selección. */
-let cursorAlDia = () => {};
-
 const ESPEJAR = ['fontFamily', 'fontSize', 'fontWeight', 'letterSpacing', 'lineHeight', 'tabSize',
   'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'whiteSpace', 'overflowWrap', 'wordBreak'];
 const LETRA_CURSOR = ['fontFamily', 'fontSize', 'fontWeight', 'letterSpacing'];
@@ -456,7 +464,7 @@ function cursorBloque(ta) {
   const ro = new ResizeObserver(pedir);
   ro.observe(ta);
   document.fonts?.ready.then(pedir);
-  cursorAlDia = pedir;
+  alDia.push(pedir);
   pedir();
 
   Router.onLeave(() => {
@@ -465,8 +473,147 @@ function cursorBloque(ta) {
     window.removeEventListener('focus', pedir);
     window.removeEventListener('blur', pedir);
     ro.disconnect();
-    cursorAlDia = () => {};
+    alDia = alDia.filter((fn) => fn !== pedir);
   });
+}
+
+/* Los números de línea, como en Notepad++: uno por renglón escrito, en la
+   primera fila que ocupa (un renglón largo que se parte en dos lleva un solo
+   número), y el del renglón donde está el cursor más claro. Van en una
+   columna encima del margen izquierdo del campo, que se ensancha con los
+   dígitos (dos como mínimo, así no salta del 9 al 10). Dónde cae cada número
+   lo mide un espejo con un bloque por renglón. */
+function numerosDeLinea(ta) {
+  const caja = ta.parentElement;
+  const col = document.createElement('div');
+  col.className = 'ub-lineas';
+  col.setAttribute('aria-hidden', 'true');
+  const tira = document.createElement('div');
+  tira.className = 'ub-lineas__tira';
+  col.append(tira);
+  const espejo = document.createElement('div');
+  espejo.className = 'ub-cursor__espejo';
+  espejo.setAttribute('aria-hidden', 'true');
+  caja.append(espejo, col);
+
+  const nums = [];
+  let actual = null;
+  let medido = '';
+  let raf = 0;
+  const marcarActual = () => {
+    const n = nums[ta.value.slice(0, ta.selectionStart).split('\n').length - 1] || null;
+    if (n === actual) return;
+    actual?.classList.remove('is-actual');
+    n?.classList.add('is-actual');
+    actual = n;
+  };
+  const correr = () => { tira.style.transform = `translateY(${-ta.scrollTop}px)`; };
+  const medir = () => {
+    raf = 0;
+    if (!ta.isConnected) return;
+    const lineas = ta.value.split('\n');
+    caja.style.setProperty('--ub-borr-num', Math.max(2, String(lineas.length).length));
+    const cs = getComputedStyle(ta);
+    for (const p of LETRA_CURSOR) col.style[p] = cs[p];
+    col.style.transform = `translate(${ta.offsetLeft + ta.clientLeft}px, ${ta.offsetTop + ta.clientTop}px)`;
+    col.style.height = `${ta.clientHeight}px`;
+
+    const clave = [ta.value, ta.clientWidth, cs.fontSize, cs.paddingLeft].join('|');
+    if (clave !== medido) {
+      medido = clave;
+      for (const p of ESPEJAR) espejo.style[p] = cs[p];
+      espejo.style.width = `${ta.clientWidth}px`;
+      espejo.replaceChildren(...lineas.map((l) => {
+        const d = document.createElement('div');
+        d.textContent = l || '​';
+        return d;
+      }));
+      // Primero se leen todas las alturas y después se escribe: intercalarlas
+      // obliga a maquetar de nuevo en cada número.
+      const tops = [...espejo.children].map((d) => d.offsetTop);
+      espejo.replaceChildren();
+      const lh = `${parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.6}px`;
+      tops.forEach((top, i) => {
+        let n = nums[i];
+        if (!n) {
+          n = document.createElement('div');
+          n.className = 'ub-lineas__n';
+          n.textContent = i + 1;
+          tira.append(n);
+          nums.push(n);
+        }
+        n.style.transform = `translateY(${top}px)`;
+        n.style.height = n.style.lineHeight = lh;
+      });
+      while (nums.length > tops.length) {
+        const n = nums.pop();
+        if (n === actual) actual = null;
+        n.remove();
+      }
+    }
+    marcarActual();
+    correr();
+  };
+  const pedir = () => { if (!raf) raf = requestAnimationFrame(medir); };
+
+  ta.addEventListener('input', pedir);
+  ta.addEventListener('scroll', correr);   // en el acto, para que no se atrase un cuadro
+  ta.addEventListener('transitionend', (e) => { if (e.propertyName === 'font-size') pedir(); });
+  document.addEventListener('selectionchange', marcarActual);
+  const ro = new ResizeObserver(pedir);
+  ro.observe(ta);
+  document.fonts?.ready.then(pedir);
+  alDia.push(pedir);
+  medir();
+
+  Router.onLeave(() => {
+    cancelAnimationFrame(raf);
+    document.removeEventListener('selectionchange', marcarActual);
+    ro.disconnect();
+    alDia = alDia.filter((fn) => fn !== pedir);
+  });
+}
+
+/* Ctrl+K corta el renglón donde está el cursor, como en nano: lo saca del
+   texto y lo deja en el portapapeles. Varios Ctrl+K seguidos, sin tocar nada
+   en el medio, se juntan en el portapapeles y se pegan de una. Con una
+   selección corta todos los renglones que toca. Va por execCommand para que
+   Ctrl+Z lo deshaga. */
+let corte = null;   // { valor, pos, texto }: el último Ctrl+K, para juntar los seguidos
+
+async function cortarLinea(ta) {
+  const v = ta.value;
+  if (!v) return;
+  const { selectionStart: a, selectionEnd: b } = ta;
+  let desde = a === 0 ? 0 : v.lastIndexOf('\n', a - 1) + 1;
+  // Una selección que termina justo después de un salto no toca el renglón de abajo.
+  const fin = b > a && v[b - 1] === '\n' ? b - 1 : b;
+  let hasta = v.indexOf('\n', fin);
+  let texto;
+  if (hasta === -1) {
+    texto = `${v.slice(desde)}\n`;
+    hasta = v.length;
+    if (desde > 0) desde -= 1;   // el último renglón se lleva el salto de antes: no queda uno vacío
+  } else {
+    hasta += 1;
+    texto = v.slice(desde, hasta);
+  }
+  const seguido = corte && corte.valor === v && corte.pos === a && a === b;
+  ta.setSelectionRange(desde, hasta);
+  if (!document.execCommand('delete')) {
+    ta.setRangeText('', desde, hasta, 'start');
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  const junto = seguido ? corte.texto + texto : texto;
+  corte = { valor: ta.value, pos: ta.selectionStart, texto: junto };
+  const n = junto.split('\n').length - 1;
+  S.borradorAviso = {
+    texto: n === 1 ? 'Línea cortada: quedó en el portapapeles' : `${n} líneas cortadas, juntas en el portapapeles`,
+    t: Date.now(),
+  };
+  syncBorrador();
+  setTimeout(syncBorrador, 1700);   // y después vuelve el conteo
+  await attempt(() => api.copyText(junto), { errorTitle: 'No se pudo copiar la línea' });
 }
 
 function viewBorrador() {
@@ -483,6 +630,7 @@ function viewBorrador() {
   const ta = $('borr');
   Icons.mount(ta.parentElement);
   ta.value = S.borrador;
+  numerosDeLinea(ta);
   cursorBloque(ta);
   syncBorrador();
 
@@ -491,6 +639,12 @@ function viewBorrador() {
     S.borradorDesde = null;
     syncBorrador();
     guardarBorrador();
+  });
+  ta.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyK') {
+      e.preventDefault();
+      cortarLinea(ta);
+    }
   });
   $('borr-copy').addEventListener('click', copiarBorrador);
   $('borr-clear').addEventListener('click', limpiarBorrador);
@@ -599,7 +753,7 @@ function limpiarBorrador() {
       ta.value = S.borrador;
       ta.classList.remove('is-limpiando');
       ta.focus({ preventScroll: true });
-      cursorAlDia();
+      for (const fn of alDia) fn();
     }, 180);
   }
   syncBorrador();

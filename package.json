@@ -1,7 +1,7 @@
 {
   "name": "umbral",
   "productName": "Umbral",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "La puerta entre el teléfono y la UCX — archivos del celu a la PC y de la PC al celu, por LAN",
   "main": "main.cjs",
   "author": "Kidd Shady · Umbrovex Systems",
