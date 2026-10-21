@@ -49,6 +49,9 @@
 
 /* ── El encabezado de cada vista: sus herramientas ─────────────────────────── */
 .ub-vr { align-self: center; height: 18px; margin-inline: var(--op-1); }
+/* La zona de herramientas de cada vista (tools() en app.js): una celda que mide
+   lo de la vista con más herramientas, alineada contra la carpeta. */
+.ub-zona > span { gap: var(--op-2); }
 .ub-size { display: flex; align-items: center; gap: var(--op-2); color: var(--op-text-4); }
 .ub-size .op-slider { width: 112px; }
 .ub-size .op-icon { width: 13px; height: 13px; }
@@ -87,7 +90,7 @@
 /* Al arrancar las tarjetas afloran escalonadas (stagger le pone --i). Una
    tarjeta nueva no la usa: de entrar se encarga reconcile(). */
 .ub-grid--entra > .ub-card {
-  animation: op-rise-in var(--op-t-3) var(--op-ease) both;
+  animation: op-fade-in var(--op-t-3) var(--op-ease) both;   /* en su lugar (hasta oct 2026 subían 8 px) */
   animation-delay: calc(min(var(--i, 0), 20) * 24ms);
 }
 
@@ -155,6 +158,8 @@
   background: color-mix(in oklab, var(--op-bg) 84%, transparent);
   box-shadow: inset 0 1px 0 var(--op-edge-lit), inset 0 0 0 1px var(--op-line), var(--op-e1);
   transition: color var(--op-t-3) var(--op-ease), box-shadow var(--op-t-3) var(--op-ease);
+  overflow: hidden;   /* el rótulo que se va queda adentro mientras la píldora cambia de ancho */
+  white-space: nowrap;
 }
 .ub-pill .op-mark { width: 12px; height: 12px; }
 .ub-pill .op-icon { width: 12px; height: 12px; }
@@ -208,11 +213,11 @@
   max-height: 88vh;
   border-radius: var(--op-r-lg);
   box-shadow: var(--op-e4);
-  animation: op-lift-in var(--op-t-3) var(--op-ease) both;
+  animation: op-fade-in var(--op-t-3) var(--op-ease) both;   /* en su lugar (hasta oct 2026 subía 14 px y crecía) */
   -webkit-user-drag: none;
 }
 .ub-lightbox[data-state='closing'] { animation: op-fade-out var(--op-t-out) var(--op-ease-in) both; }
-.ub-lightbox[data-state='closing'] img { animation: op-lift-out var(--op-t-out) var(--op-ease-in) both; }
+.ub-lightbox[data-state='closing'] img { animation: op-fade-out var(--op-t-out) var(--op-ease-in) both; }
 
 /* El QR, colgado del botón del pie del rail: sube desde él. */
 .ub-qr {
@@ -242,15 +247,18 @@
 .ub-qr__code img { display: block; width: 100%; height: 100%; }
 .ub-qr__code:empty { background: var(--op-sunken); }
 .ub-qr__text { font-size: var(--op-fs-12); color: var(--op-text-3); line-height: var(--op-lh-loose); }
-/* La vinculación de la app del celu: debajo del QR, separada por una línea. */
+/* La vinculación de la app del celu: debajo del QR, separada por una línea.
+   Es una celda (pairHTML en app.js): el botón y el código en el mismo lugar,
+   con el alto del código, arriba de todo. */
 .ub-qr__pair {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--op-2);
+  display: grid;
+  justify-items: stretch;
+  align-items: start;
   padding-top: var(--op-3);
   box-shadow: inset 0 1px 0 var(--op-line);
 }
+.ub-pair__idle, .ub-pair__con { display: flex; flex-direction: column; align-items: flex-start; gap: var(--op-2); }
+.ub-pair__nota:empty { display: none; }
 /* El código es lo importante del cartel: un pozo con el canto vivo. */
 .ub-pair__code {
   align-self: stretch;
@@ -289,7 +297,7 @@
   align-items: center;
   gap: var(--op-3);
   color: var(--op-accent);
-  animation: op-rise-in var(--op-t-3) var(--op-ease) both;
+  animation: op-fade-in var(--op-t-3) var(--op-ease) both;   /* en su lugar (hasta oct 2026 subía 8 px) */
 }
 .ub-veil__card > .op-icon { width: 40px; height: 40px; stroke-width: 1.1; filter: drop-shadow(0 0 10px rgb(var(--op-accent-rgb) / .35)); }
 .ub-veil__title { font-size: var(--op-fs-15); font-weight: var(--op-w-medium); color: var(--op-text); }
@@ -337,17 +345,24 @@
 }
 .ub-upd__ico.is-bad { background: var(--op-danger-wash); box-shadow: inset 0 0 0 1px var(--op-danger-ring); color: var(--op-danger); }
 .ub-upd__txt { flex: 1; min-width: 0; padding-top: 1px; }
-.ub-upd__title { font-size: var(--op-fs-13); font-weight: var(--op-w-medium); color: var(--op-text); }
-.ub-upd__sub { margin-top: 2px; font-size: var(--op-fs-12); color: var(--op-text-3); line-height: var(--op-lh-loose); }
+.ub-upd__title { font-size: var(--op-fs-13); font-weight: var(--op-w-medium); color: var(--op-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* La tarjeta no cambia de alto entre fases (pintarUpd en app.js): el renglón
+   de abajo guarda lugar para dos líneas, que es lo que ocupa la más larga
+   («Si no reiniciás ahora, se instala…»). */
+.ub-upd__sub { margin-top: 2px; font-size: var(--op-fs-12); color: var(--op-text-3); line-height: var(--op-lh-loose); min-height: calc(2em * var(--op-lh-loose)); }
 .ub-upd__x { margin: -4px -4px 0 0; }
-.ub-upd .op-meter { margin-top: var(--op-3); }
-.ub-upd__acts { display: flex; justify-content: flex-end; gap: var(--op-2); margin-top: var(--op-3); }
+/* Mientras baja no se puede cerrar: la cruz se apaga en su lugar, no se va. */
+.ub-upd__x.is-off { opacity: 0; pointer-events: none; }
+/* El pie: los botones y la barra en la misma celda, que mide lo de los
+   botones; la barra queda centrada en ese alto. */
+.ub-upd__pie { display: grid; width: 100%; justify-items: stretch; margin-top: var(--op-3); }
+.ub-upd__acts { display: flex; justify-content: flex-end; gap: var(--op-2); }
 
 /* ── El Notepad ───────────────────────────────────────────────────────────────
    Un campo que ocupa la vista entera y, abajo, el pie con el conteo y las dos
    acciones. No se estira a mano: ya llena el lugar. */
 .ub-note {
-  --ub-note-num: 2;     /* dígitos de la columna de números; los cambia el JS */
+  --ub-note-num: 3;     /* dígitos de la columna de números; los cambia el JS (3 como mínimo) */
   position: relative;   /* el cursor de bloque y los números se ubican contra esta caja */
   display: flex;
   flex-direction: column;

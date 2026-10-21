@@ -186,19 +186,24 @@ app.whenReady().then(async () => {
   const pedir = (code) => request('POST', '/pair', Buffer.from(JSON.stringify({ code, device: 'Humo' })), { sinLlave: true, type: 'application/json' });
   const codigo = async () => (await js(`document.querySelector('.ub-qr .ub-pair__code')?.textContent || ''`)).replace(/\D/g, '');
   ok('sin llave, el servidor no entrega la bandeja', (await request('GET', '/out', null, { sinLlave: true })).status === 401);
+  const qrReposo = await rect('.ub-qr');
   await tap('.ub-qr [data-pair="start"]');
   await sleep(700);
   const cod = await codigo();
   ok('el botón muestra un código de 6 dígitos', /^\d{6}$/.test(cod), cod);
   ok('…con su vencimiento', /^Vence en [12]:\d\d$/.test(await js(`document.querySelector('.ub-qr .ub-pair__left')?.textContent.trim()`)));
   const qrAlto = await rect('.ub-qr');
-  ok('el cartel crece y sigue adentro de la ventana', dentro(qrAlto) && qrAlto.h > qr.h, JSON.stringify({ antes: qr.h, despues: qrAlto }));
+  // Desde oct 2026 el botón y el código comparten una celda: el cartel nace
+  // con el alto del código y no cambia (antes crecía unos 60 px hacia arriba).
+  ok('el cartel no cambia de alto y sigue adentro de la ventana', dentro(qrAlto) && Math.abs(qrAlto.h - qrReposo.h) < 0.5 && Math.abs(qrAlto.y - qrReposo.y) < 0.5,
+    JSON.stringify({ antes: qrReposo, despues: qrAlto }));
   const canje = await pedir(cod);
   ok('el celu canjea el código por la llave', canje.status === 200 && JSON.parse(canje.body).key === llave(), `${canje.status} ${canje.body}`);
   await sleep(800);
   ok('la app avisa que se vinculó', await js(`[...document.querySelectorAll('.op-toast')].some((t) => /Celu vinculado/.test(t.textContent))`));
   ok('…y el cartel vuelve al botón con la confirmación',
-    await js(`!document.querySelector('.ub-qr .ub-pair__code') && /quedó vinculado/.test(document.querySelector('.ub-qr .ub-qr__pair').textContent)`));
+    await js(`document.querySelector('.ub-qr .ub-pair__con').hidden && !document.querySelector('.ub-qr .ub-pair__idle').hidden
+      && /quedó vinculado/.test(document.querySelector('.ub-qr .ub-pair__nota').textContent)`));
 
   await tap('.ub-qr [data-pair="start"]');
   await sleep(700);
@@ -261,8 +266,21 @@ app.whenReady().then(async () => {
   ok('una versión nueva aparece abajo a la izquierda de la hoja, adentro de la ventana', dentro(upd) && upd.x > rail.x + rail.w && upd.x < rail.x + rail.w + 60, JSON.stringify({ upd, rail }));
   ok('dice qué trae y cuánto pesa', (await js(`document.querySelector('.ub-upd__sub').textContent`)) === 'Entra a la familia Opal · 100 MB');
   ok('con Descargar como primario', await js(`document.querySelector('.ub-upd .op-btn--primary')?.textContent === 'Descargar'`));
+  /* Oct 2026, el arreglo del About de NTX: la tarjeta no cambia de alto ni de
+     lugar entre fases, en ningún cuadro, y la cruz no se va: se apaga. */
+  const muestras = async () => js(`(async () => {
+    const el = document.querySelector('.ub-upd');
+    const out = [];
+    for (let i = 0; i < 16; i++) { await new Promise((r) => setTimeout(r, 25)); const r = el.getBoundingClientRect(); out.push([Math.round(r.top * 10) / 10, Math.round(r.height * 10) / 10]); }
+    return out;
+  })()`);
   estado({ phase: 'downloading', pct: 0.42 });
-  await sleep(600);
+  const aBajando = await muestras();
+  const cruzBajando = await js(`(() => { const x = document.querySelector('.ub-upd__x'); return { esta: !!x, op: +getComputedStyle(x).opacity, clic: getComputedStyle(x).pointerEvents }; })()`);
+  ok('de disponible a bajando la tarjeta no cambia de alto ni de lugar en ningún cuadro',
+    aBajando.every(([t, h]) => Math.abs(t - upd.y) < 0.6 && Math.abs(h - upd.h) < 0.6), JSON.stringify({ upd, aBajando }));
+  ok('mientras baja la cruz está pero apagada', cruzBajando.esta && cruzBajando.op === 0 && cruzBajando.clic === 'none', JSON.stringify(cruzBajando));
+  await sleep(200);
   ok('bajando lleva su barra', (await js(`getComputedStyle(document.querySelector('.ub-upd .op-meter__fill')).getPropertyValue('--op-pct').trim()`)) === '42.0%');
   estado({ phase: 'downloading', pct: 0.5 });
   /* El número corre (roll) y no destella: con valor() destellaba en cada aviso
@@ -284,7 +302,9 @@ app.whenReady().then(async () => {
   ok('y el número cambia en el lugar', (await js(`document.querySelector('.ub-upd__sub').textContent`)) === '50 %'
     && (await js(`document.querySelectorAll('.ub-upd').length`)) === 1);
   estado({ phase: 'ready' });
-  await sleep(600);
+  const aLista = await muestras();
+  ok('de bajando a lista tampoco', aLista.every(([t, h]) => Math.abs(t - upd.y) < 0.6 && Math.abs(h - upd.h) < 0.6), JSON.stringify({ upd, aLista }));
+  await sleep(200);
   ok('lista: ofrece reiniciar', await js(`[...document.querySelectorAll('.ub-upd .op-btn')].some(b => b.textContent === 'Reiniciar')`));
   await tap('.ub-upd [data-upd="close"]');
   await sleep(500);
@@ -383,6 +403,10 @@ app.whenReady().then(async () => {
     }
   }
   document.querySelectorAll('.op-scroll, .op-main, [class*="scroll"]').forEach((s) => { s.scrollTop = 0; s.scrollLeft = 0; });
+  // Las transiciones vuelven: sin esto quedaban apagadas para todo el resto
+  // del humo, y el hover, el disabled y los anillos cambiaban de golpe (Fran
+  // lo veía como botones que saltaban). Opal ya lo hacía.
+  document.getElementById('aud-notr')?.remove();
   return out;
 })(document)`;
   win.focus();
@@ -495,7 +519,9 @@ app.whenReady().then(async () => {
   ok('un renglón que se parte lleva un solo número', n1.n.join() === '1,2,3' && n1.y[2] - n1.y[1] >= 2 * n1.lh - 1, JSON.stringify(n1.y));
   ok('el actual sigue al cursor', n1.actual === 0, String(n1.actual));
   const n2 = await numeros(Array.from({ length: 120 }, (_, i) => `l${i}`).join('\n'), 0);
-  ok('con 100 renglones o más, la columna se ensancha', n2.n.length === 120 && n2.pad > n0.pad && n2.colDer < n2.pad, `${n2.pad} vs ${n0.pad}`);
+  // Desde oct 2026 la columna nace con lugar para tres dígitos: al pasar los
+  // 99 renglones el texto no se corre (antes saltaba 1ch a la derecha).
+  ok('con 100 renglones o más, la columna no cambia y el texto no se corre', n2.n.length === 120 && n2.pad === n0.pad && n2.colDer < n2.pad, `${n2.pad} vs ${n0.pad}`);
   await js(`document.getElementById('note').scrollTop = 200`);
   await sleep(100);
   const n3 = await numeros();
@@ -718,6 +744,22 @@ app.whenReady().then(async () => {
   app.emit('second-instance', {}, ['umbral.exe', '--notepad']);
   await sleep(700);
   ok('--notepad abre la vista del Notepad', (await js(`document.querySelector('.op-navitem.is-active')?.dataset.view`)) === 'notepad');
+
+  /* Casillas fijas (oct 2026): la carpeta está en el mismo píxel en las tres
+     vistas, y lo que Recibidas y Para el celu comparten (el tamaño y la purga)
+     también. Antes la carpeta cambiaba de punta al ir y volver del Notepad. */
+  const casillas = {};
+  for (const v of ['recibidas', 'celu', 'notepad']) {
+    await tap(`.op-navitem[data-view="${v}"]`);
+    await sleep(700);
+    casillas[v] = await js(`(() => { const r = (id) => { const e = document.getElementById(id); if (!e) return null; const b = e.getBoundingClientRect(); return [Math.round(b.left * 10) / 10, Math.round(b.top * 10) / 10]; };
+      return { carpeta: r('btn-folder'), tamano: r('thumb-size'), purga: r('btn-nuke') }; })()`);
+  }
+  const igual = (a, b) => a && b && a[0] === b[0] && a[1] === b[1];
+  ok('la carpeta queda en el mismo lugar en las tres vistas',
+    igual(casillas.recibidas.carpeta, casillas.celu.carpeta) && igual(casillas.celu.carpeta, casillas.notepad.carpeta), JSON.stringify(casillas));
+  ok('el tamaño y la purga, en el mismo lugar en Recibidas y Para el celu',
+    igual(casillas.recibidas.tamano, casillas.celu.tamano) && igual(casillas.recibidas.purga, casillas.celu.purga), JSON.stringify(casillas));
   ok('…con el foco en el campo', await js(`document.activeElement?.id === 'note'`));
 
   console.log('\n8. Consola');

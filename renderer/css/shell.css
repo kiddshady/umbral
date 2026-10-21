@@ -206,8 +206,14 @@
   grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
   padding: 0 var(--op-gutter) var(--op-gutter);
-  transition: grid-template-columns var(--op-t-3) var(--op-ease), padding var(--op-t-3) var(--op-ease);
+  /* Al guardar el panel, primero se apaga lo de adentro y después se cierra
+     la pista: la pista espera 100 ms (lo que tarda el panel en llegar a ~10 %
+     de opacidad) y va in-out, que al arrancar casi no se mueve. Al revés, el
+     texto del panel llegaba todavía visible al borde y se cortaba ahí (Fran,
+     oct 2026). Al abrir no espera: abre rápido y lo de adentro entra después. */
+  transition: grid-template-columns var(--op-t-3) var(--op-ease-both) 100ms, padding var(--op-t-3) var(--op-ease);
 }
+.op-app.con-panel .op-body { transition: grid-template-columns var(--op-t-3) var(--op-ease), padding var(--op-t-3) var(--op-ease); }
 .op-body > .op-rail     { grid-column: 1; grid-row: 1 / -1; }
 .op-body > .op-main     { grid-column: 3; grid-row: 1; }
 .op-body > .op-panel    { grid-column: 5; grid-row: 1 / -1; }
@@ -288,8 +294,8 @@
 }
 .op-navitem.is-active .op-icon { color: var(--op-accent); }
 
-/* El indicador de activo es un vector corto sobre el borde izquierdo: crece
-   desde el centro en vez de aparecer. */
+/* El indicador de activo es un vector corto sobre el borde izquierdo: se
+   enciende en su lugar (hasta oct 2026 crecía desde el centro). */
 .op-navitem::before {
   content: '';
   position: absolute;
@@ -299,10 +305,11 @@
   height: 16px;
   border-radius: var(--op-r-pill);
   background: var(--op-accent);
-  transform: translateY(-50%) scaleY(0);
-  transition: transform var(--op-t-3) var(--op-ease);
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: opacity var(--op-t-2) var(--op-ease-soft);
 }
-.op-navitem.is-active::before { transform: translateY(-50%) scaleY(1); }
+.op-navitem.is-active::before { opacity: 1; }
 
 /* Contador a la derecha del item (corridas activas, borradores…) */
 .op-navitem__count {
@@ -450,9 +457,16 @@
   transition: width var(--op-t-4) var(--op-ease);
 }
 /* El contenido conserva su ancho mientras el panel se cierra: sin esto el
-   texto se reacomoda durante la transición y el colapso se ve como un temblor. */
-.op-inspector > * { min-width: var(--op-inspector); }
-.op-inspector.is-collapsed { width: 0; }
+   texto se reacomoda durante la transición y el colapso se ve como un temblor.
+   Y se apaga ANTES de que el panel se cierre (como el panel del shell): si
+   no, llegaba visible al borde y se cortaba ahí. Al abrir entra cuando el
+   panel ya casi está abierto. */
+.op-inspector > * {
+  min-width: var(--op-inspector);
+  transition: opacity var(--op-t-2) var(--op-ease-soft) 120ms;
+}
+.op-inspector.is-collapsed { width: 0; transition: width var(--op-t-4) var(--op-ease-both) 100ms; }
+.op-inspector.is-collapsed > * { opacity: 0; transition: opacity var(--op-t-out) var(--op-ease-both); }
 .op-inspector__head {
   display: flex;
   align-items: center;
@@ -487,10 +501,11 @@
   box-shadow: var(--op-sheet), var(--op-e3);
   overflow: hidden;
   opacity: 0;
-  transition: opacity var(--op-t-2) var(--op-ease-soft);
+  /* Se va parejo y rápido: la pista lo espera (ver .op-body). */
+  transition: opacity var(--op-t-out) var(--op-ease-both);
 }
 .op-panel > * { min-width: var(--op-panel); }
-.op-app.con-panel .op-panel { opacity: 1; transition-delay: 60ms; }
+.op-app.con-panel .op-panel { opacity: 1; transition: opacity var(--op-t-2) var(--op-ease-soft) 60ms; }
 .op-app:not(.con-panel) .op-panel { pointer-events: none; }
 /* El título del panel queda alineado con el de la vista: los dos arrancan en
    la misma fila del cuerpo, así que basta con que el CENTRO de su primera
@@ -546,8 +561,9 @@
    adentro, no la hoja (el blur no se anima). __in se pliega a 0 sin relleno
    propio (un padding no se comprime y dejaba 8 px de compositor guardado);
    el aire va en __pad, adentro. */
-.op-composer { display: grid; grid-template-rows: 0fr; min-width: 0; transition: grid-template-rows var(--op-t-3) var(--op-ease); }
-.op-app.con-composer .op-composer { grid-template-rows: 1fr; }
+/* Al guardarlo, la fila espera a que la caja se apague (como el panel). */
+.op-composer { display: grid; grid-template-rows: 0fr; min-width: 0; transition: grid-template-rows var(--op-t-3) var(--op-ease-both) 100ms; }
+.op-app.con-composer .op-composer { grid-template-rows: 1fr; transition: grid-template-rows var(--op-t-3) var(--op-ease); }
 .op-composer__in { min-height: 0; overflow: hidden; }
 .op-composer__pad { padding-top: var(--op-gutter); }
 .op-composer__box {
@@ -603,10 +619,10 @@
   background: var(--op-deep);
   color: var(--op-text);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / .16), inset 0 0 0 1px var(--op-rim), var(--op-e1);
-  transition: var(--tr-color), opacity var(--op-t-2) var(--op-ease-soft), transform var(--op-t-1) var(--op-ease-soft);
+  transition: var(--tr-color), opacity var(--op-t-2) var(--op-ease-soft);
 }
 .op-composer__send:hover { background: var(--op-deep-2); box-shadow: inset 0 1px 0 rgb(255 255 255 / .22), inset 0 0 0 1px var(--op-rim-2), 0 0 14px rgb(var(--op-accent-rgb) / .08); }
-.op-composer__send:active { transform: scale(.92); }
+.op-composer__send:active { background: var(--op-deep-2); box-shadow: inset 0 1px 0 rgb(255 255 255 / .10), inset 0 0 0 1px var(--op-rim-2); }   /* sin escala: hasta oct 2026, .92 */
 .op-composer__send:disabled { background: transparent; color: var(--op-text-4); box-shadow: inset 0 0 0 1px var(--op-line); pointer-events: none; }
 .op-composer__send .op-icon { width: 17px; height: 17px; stroke-width: 1.7; }
 /* .send-relleno: el acento pleno con su resplandor, como el botón de NeonCode.

@@ -32,10 +32,12 @@
   white-space: nowrap;
   cursor: default;
   overflow: hidden;
-  transition: var(--tr-color), transform var(--op-t-1) var(--op-ease-soft);
+  transition: var(--tr-color);
 }
 .op-btn .op-icon { width: 14px; height: 14px; }
-.op-btn:active { transform: scale(.975); }
+/* Presionar no lo achica: hasta oct 2026 era scale(.975) y en cada click el
+   botón latía. Cada variante se hunde por color (más honda, con menos
+   sombra), y lo confirma el destello de .op-flashable donde lo haya. */
 .op-btn:disabled,
 .op-btn[aria-disabled='true'] {
   color: var(--op-text-4);
@@ -57,6 +59,10 @@
   box-shadow: inset 0 1px 0 rgb(255 255 255 / .22), inset 0 0 0 1px var(--op-rim-2),
               0 0 16px rgb(var(--op-accent-rgb) / .08), var(--op-e2);
 }
+.op-btn--primary:active {
+  background: var(--op-deep-2);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .10), inset 0 0 0 1px var(--op-rim-2), var(--op-e1);
+}
 .op-btn--primary:disabled { background: var(--op-s3); color: var(--op-text-4); box-shadow: none; }
 
 /* Secundario: una hoja chica — relleno de luz con canto iluminado (inset, no
@@ -69,6 +75,10 @@
 .op-btn--secondary:hover {
   background: var(--op-s3);
   box-shadow: inset 0 1px 0 var(--op-edge-lit), inset 0 0 0 1px var(--op-line-2), var(--op-e2);
+}
+.op-btn--secondary:active {
+  background: var(--op-s2);
+  box-shadow: inset 0 1px 0 var(--op-edge-lit), inset 0 0 0 1px var(--op-line-3), var(--op-e1);
 }
 
 /* Ghost: sin superficie hasta que lo tocás. */
@@ -105,10 +115,11 @@
   overflow: hidden;
   position: relative;
   /* La opacidad también: un botón que se apaga (atrás, adelante) no salta. */
-  transition: var(--tr-color), transform var(--op-t-1) var(--op-ease-soft), opacity var(--op-t-1) var(--op-ease-soft);
+  transition: var(--tr-color), opacity var(--op-t-1) var(--op-ease-soft);
 }
 .op-iconbtn:hover { background: var(--op-wash-1); color: var(--op-text); }
-.op-iconbtn:active { transform: scale(.92); background: var(--op-wash-2); }
+/* Sin escala (hasta oct 2026, .92): se hunde por el fondo. */
+.op-iconbtn:active { background: var(--op-wash-2); }
 .op-iconbtn.is-active { background: var(--op-wash-2); color: var(--op-text); }
 /* Apagado se ve apagado: antes era igual a uno que anda, y el click no hacía nada. */
 .op-iconbtn:disabled { color: var(--op-text-4); opacity: .55; pointer-events: none; }
@@ -117,16 +128,17 @@
    detener, maximizar → restaurar): los dos viven en la misma celda y se
    cruzan; .is-b muestra el segundo. Cambiar el SVG por innerHTML lo hacía
    saltar de un cuadro al otro. Son los dos SVG del botón: lo que no es un
-   SVG (el contador del escudo de Prism) no entra en el cruce. Cómo se va el
-   primero y de dónde llega el segundo se cambia con --swap-out y --swap-in
-   (recargar gira, la estrella late). Prism tenía esta misma regla copiada
-   seis veces, una por botón. */
+   SVG (el contador del escudo de Prism) no entra en el cruce. De fábrica se
+   cruzan solo por opacidad (hasta oct 2026 el que se iba se achicaba a .75
+   y el que llegaba crecía: el botón de maximizar latía). Una app que quiere
+   otra cosa la pide con --swap-out y --swap-in (recargar gira, la estrella
+   late). Prism tenía esta misma regla copiada seis veces, una por botón. */
 .op-iconswap > .op-icon {
   grid-area: 1 / 1;
   transition: opacity var(--op-t-2) var(--op-ease-soft), transform var(--op-t-3) var(--op-ease);
 }
-.op-iconswap > .op-icon:last-of-type { opacity: 0; transform: var(--swap-in, scale(.75)); }
-.op-iconswap.is-b > .op-icon:first-of-type { opacity: 0; transform: var(--swap-out, scale(.75)); }
+.op-iconswap > .op-icon:last-of-type { opacity: 0; transform: var(--swap-in, none); }
+.op-iconswap.is-b > .op-icon:first-of-type { opacity: 0; transform: var(--swap-out, none); }
 .op-iconswap.is-b > .op-icon:last-of-type { opacity: 1; transform: none; }
 .op-iconbtn--sm { width: 22px; height: 22px; }
 .op-iconbtn--sm .op-icon { width: 13px; height: 13px; }
@@ -275,9 +287,10 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .op-select__placeholder { color: var(--op-text-4); }
 /* El valor que se va (el calco de swap con `relevo`) se sigue cortando con puntos. */
 .op-select__value > .op-swap-out--over { overflow: hidden; text-overflow: ellipsis; }
-.op-select .op-icon { color: var(--op-text-4); transition: transform var(--op-t-2) var(--op-ease), color var(--op-t-1) var(--op-ease-soft); }
+/* El chevron no gira al abrir (hasta oct 2026, 180°): se enciende. */
+.op-select .op-icon { color: var(--op-text-4); transition: color var(--op-t-1) var(--op-ease-soft); }
 .op-select:hover .op-icon { color: var(--op-text-2); }
-.op-select.is-open .op-icon { transform: rotate(180deg); color: var(--op-text-2); }
+.op-select.is-open .op-icon { color: var(--op-text); }
 
 /* ── Switch ───────────────────────────────────────────────────────────────── */
 .op-switch {
@@ -347,8 +360,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .op-check.is-on .op-icon { stroke-dashoffset: 0; }
 
 /* ── Segmentado ───────────────────────────────────────────────────────────────
-   La cápsula seleccionada se DESLIZA entre opciones (--seg = índice activo).
-   Que viaje en vez de saltar es lo que lo hace sentir físico. La cápsula es
+   La opción elegida prende su cápsula en su lugar (ver abajo). La cápsula es
    una hoja chica: junta luz en el canto, como todo lo que flota. */
 .op-segmented {
   position: relative;
@@ -360,21 +372,21 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
   background: var(--op-sunken);
   box-shadow: var(--op-hairline);
 }
-.op-segmented::before {
+/* La cápsula es de cada opción: la elegida prende la suya y la anterior la
+   apaga, en su lugar. Hasta oct 2026 había una sola que viajaba de una
+   opción a la otra (y había que medirla al nacer para que no viajara sola). */
+.op-segmented__opt::before {
   content: '';
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: var(--seg-w, 0px);
-  height: calc(100% - 4px);
+  inset: 0;
+  z-index: -1;
   border-radius: var(--op-r-xs);
   background: var(--op-s3);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / .07), var(--op-e1);
-  transform: translateX(calc(var(--seg, 0) * var(--seg-w, 0px)));
-  transition: transform var(--op-t-3) var(--op-ease), width var(--op-t-3) var(--op-ease);
+  opacity: 0;
+  transition: opacity var(--op-t-2) var(--op-ease-soft);
 }
-/* Mientras bindSwitcher lo ubica al nacer: aparece en su lugar, no viaja. */
-.op-segmented[data-placing]::before { transition: none; }
+.op-segmented__opt.is-active::before { opacity: 1; }
 .op-segmented__opt {
   position: relative;
   z-index: 1;

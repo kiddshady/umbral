@@ -12,7 +12,7 @@
 import { Icons } from './icons.js';
 import { Tooltip, Toast, Menu, FieldMenu, Modal } from './overlays.js';
 import Router from './router.js';
-import { initClickFlash, initScrollFades, raf2, exit, swap, numero, valor, frase, reconcile, stagger, deslizarAlto, roll } from './motion.js';
+import { initClickFlash, initScrollFades, raf2, exit, swap, numero, frase, reconcile, stagger, deslizarAncho, celda, roll } from './motion.js';
 import { esc, paint, head, mark, attempt, colorToken } from './ui.js';
 import { Shell } from './shell.js';
 import { fmtClock, plural, locale } from './format.js';
@@ -247,7 +247,12 @@ function updateOut(el, { it }) {
   const d = it.delivered ? '1' : '0';
   if (pill && pill.dataset.delivered !== d) {
     pill.dataset.delivered = d;
-    swap(pill, pillHTML(it), { relevo: true });
+    /* La píldora ajusta su ancho al rótulo nuevo mientras los rótulos se
+       cruzan adentro, recortados por ella: el que se va nunca se sale. Está
+       anclada a la derecha, así que crece y se achica hacia la izquierda sin
+       correr nada (oct 2026; antes el fondo se achicaba de golpe y el rótulo
+       viejo desbordaba). */
+    deslizarAncho(pill, () => swap(pill, pillHTML(it), { relevo: true }));
   }
 }
 
@@ -298,19 +303,37 @@ const SIZE = `<div class="ub-size" data-tip="Tamaño de las miniaturas" data-tip
   <input type="range" class="op-slider" id="thumb-size" min="150" max="420" step="10" aria-label="Tamaño de las miniaturas">
   <i data-icon="sizeLg"></i>
 </div>`;
+/* Casillas fijas (oct 2026): la carpeta va SIEMPRE última, y a su izquierda
+   una zona del ancho de las herramientas más anchas de las tres vistas. Así
+   lo que dos vistas comparten (la carpeta, el tamaño y la purga entre
+   Recibidas y Para el celu) queda en el mismo píxel, y el fundido del cambio
+   de vista solo cruza lo que cambia. Antes la carpeta cambiaba de punta al ir
+   y volver del Notepad y los botones se cruzaban en lugares distintos: Fran
+   lo veía como «botones saltando». */
 const TOOLS = {
-  recibidas: () => `${SIZE}${SEP}${iconBtn('btn-folder', 'folder', 'Abrir la carpeta de lo recibido')}${iconBtn('btn-nuke', 'nuke', 'Purgar todo', 'ub-nuke')}`,
+  recibidas: () => `${SIZE}${SEP}${iconBtn('btn-nuke', 'nuke', 'Purgar todo', 'ub-nuke')}`,
   celu: () => `${iconBtn('btn-add', 'plus', 'Agregar archivos')}${iconBtn('btn-sweep', 'sweep', 'Quitar las ya bajadas')}${SEP}${SIZE}${SEP}`
-    + `${iconBtn('btn-folder', 'folder', 'Abrir la carpeta de la bandeja')}${iconBtn('btn-nuke', 'nuke', 'Vaciar la bandeja', 'ub-nuke')}`,
+    + `${iconBtn('btn-nuke', 'nuke', 'Vaciar la bandeja', 'ub-nuke')}`,
   // Limpiar y Copiar todo van arriba: abajo a la derecha caen los toasts.
-  notepad: () => `${iconBtn('btn-folder', 'folder', 'Mostrar notepad.txt en su carpeta')}${SEP}
-    <button class="op-btn op-btn--ghost op-btn--sm" id="note-clear"><i data-icon="trash"></i> Limpiar</button>
+  notepad: () => `<button class="op-btn op-btn--ghost op-btn--sm" id="note-clear"><i data-icon="trash"></i> Limpiar</button>
     <button class="op-btn op-btn--secondary op-btn--sm" id="note-copy"><i data-icon="copy"></i> Copiar todo</button>`,
 };
+const CARPETA = {
+  recibidas: 'Abrir la carpeta de lo recibido',
+  celu: 'Abrir la carpeta de la bandeja',
+  notepad: 'Mostrar notepad.txt en su carpeta',
+};
+/* La zona es una celda (.op-celda): las herramientas de las otras vistas
+   están ahí, apagadas, sin ids y fuera del foco, solo para que la zona mida
+   lo de la más ancha. */
+const tools = (v) => `<span class="op-celda op-celda--end ub-zona">${Object.keys(TOOLS).map((k) => (k === v
+  ? `<span>${TOOLS[k]()}</span>`
+  : `<span hidden inert aria-hidden="true">${TOOLS[k]().replace(/\sid="[^"]*"/g, '')}</span>`)).join('')}</span>`
+  + `${SEP}${iconBtn('btn-folder', 'folder', CARPETA[v])}`;
 
 function view(v) {
   const list = VIEWS[v].list();
-  paint(`${head({ title: VIEWS[v].title, sub: VIEWS[v].sub, actions: TOOLS[v]() })}${list.length
+  paint(`${head({ title: VIEWS[v].title, sub: VIEWS[v].sub, actions: tools(v) })}${list.length
     ? `<div class="op-scroll op-grow"><div class="ub-grid" id="grid"></div></div>`
     : `<div class="op-grow" style="display:grid;place-items:center">${VIEWS[v].empty()}</div>`}`);
   wireHead(v);
@@ -545,7 +568,9 @@ function numerosDeLinea(ta) {
     raf = 0;
     if (!ta.isConnected) return;
     const lineas = ta.value.split('\n');
-    caja.style.setProperty('--ub-note-num', Math.max(2, String(lineas.length).length));
+    // Tres dígitos de entrada (oct 2026): con dos, al llegar al renglón 100 la
+    // columna se ensanchaba y todo el texto saltaba 1ch a la derecha.
+    caja.style.setProperty('--ub-note-num', Math.max(3, String(lineas.length).length));
     const cs = getComputedStyle(ta);
     for (const p of LETRA_CURSOR) col.style[p] = cs[p];
     col.style.transform = `translate(${ta.offsetLeft + ta.clientLeft}px, ${ta.offsetTop + ta.clientTop}px)`;
@@ -883,7 +908,7 @@ function buscador(ta) {
 }
 
 function viewNotepad() {
-  paint(`${head({ title: 'Notepad', sub: 'Lo escriben la PC, el celu y CC', actions: TOOLS.notepad() })}
+  paint(`${head({ title: 'Notepad', sub: 'Lo escriben la PC, el celu y CC', actions: tools('notepad') })}
   <div class="ub-note op-grow">
     <textarea class="op-textarea op-textarea--mono ub-note__text" id="note" spellcheck="false"
       placeholder="Pegá o escribí algo para tenerlo a mano: un comando, un link, una nota para CC."></textarea>
@@ -1027,8 +1052,20 @@ function limpiarNotepad() {
     S.notepad = antes;
     S.notepadSel = sel;
     guardarNotepad({ ya: true });
+    /* El texto vuelve fundiéndose, como se fue: nace transparente (sin
+       transición, el campo está vacío y no se ve) y se enciende por color.
+       Antes aparecía de golpe. */
     const t = $('note');
-    if (t) { t.value = antes; t.focus({ preventScroll: true }); }
+    if (t) {
+      t.style.transition = 'none';
+      t.classList.add('is-limpiando');
+      void t.offsetWidth;
+      t.style.transition = '';
+      t.value = antes;
+      void t.offsetWidth;
+      t.classList.remove('is-limpiando');
+      t.focus({ preventScroll: true });
+    }
     syncNotepad();
   } } });
 }
@@ -1200,20 +1237,31 @@ let qr = null;
    2 minutos y que se anula al cerrar este cartel. */
 let pairTimer = 0;
 
-const pairIdleHTML = (nota = '') => `
-  <button class="op-btn op-btn--secondary op-btn--sm" data-pair="start"><i data-icon="link"></i> Código para la app del celu</button>
-  ${nota ? `<div class="ub-qr__text">${esc(nota)}</div>` : ''}`;
+/* Los dos estados de la vinculación (el botón con su nota, y el código con
+   su vencimiento) viven siempre en la misma celda (oct 2026): el cartel nace
+   con el alto del más alto y no cambia nunca, solo se cruzan en su lugar.
+   Antes crecía unos 60 px hacia arriba al pedir el código y el QR subía. */
+const pairHTML = () => `
+  <div class="ub-pair__idle">
+    <button class="op-btn op-btn--secondary op-btn--sm" data-pair="start"><i data-icon="link"></i> Código para la app del celu</button>
+    <div class="ub-qr__text ub-pair__nota"></div>
+  </div>
+  <div class="ub-pair__con" hidden>
+    <div class="ub-pair__code op-mono op-copyable">000 000</div>
+    <div class="ub-qr__text">Escribilo en Umbral Mobile. <span class="ub-pair__left">Vence en 2:00</span></div>
+  </div>`;   // el código y el vencimiento de muestra son para que la celda mida lo que va a medir
 
 const restante = (expires) => {
   const s = Math.max(0, Math.ceil((expires - Date.now()) / 1000));
   return `Vence en ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
-function pairSwap(html) {
+/* Vuelve al botón, con una nota abajo (se releva en su renglón). */
+function pairIdle(nota) {
   if (!qr) return;
   const box = qr.querySelector('.ub-qr__pair');
-  deslizarAlto(qr, () => swap(box, html, { relevo: true }));
-  Icons.mount(box);
+  swap(box.querySelector('.ub-pair__nota'), esc(nota), { relevo: true });
+  celda(box, 0);
 }
 
 function pairStop() {
@@ -1224,18 +1272,20 @@ function pairStop() {
 async function pairStart() {
   const p = await attempt(() => api.pair.start(), { errorTitle: 'No se pudo generar el código' });
   if (!p || !qr) return;
-  const code = `${p.code.slice(0, 3)} ${p.code.slice(3)}`;
-  pairSwap(`
-    <div class="ub-pair__code op-mono op-copyable">${esc(code)}</div>
-    <div class="ub-qr__text">Escribilo en Umbral Mobile. <span class="ub-pair__left">${restante(p.expires)}</span></div>`);
+  const box = qr.querySelector('.ub-qr__pair');
+  box.querySelector('.ub-pair__code').textContent = `${p.code.slice(0, 3)} ${p.code.slice(3)}`;
+  const left = box.querySelector('.ub-pair__left');
+  left.textContent = restante(p.expires);
+  celda(box, 1);
   pairStop();
+  /* La cuenta corre sola: sin destello (con valor() destellaba cada segundo). */
   pairTimer = setInterval(() => {
     if (!qr) return pairStop();
     if (Date.now() >= p.expires) {
       pairStop();
-      return pairSwap(pairIdleHTML('El código venció.'));
+      return pairIdle('El código venció.');
     }
-    valor(qr.querySelector('.ub-pair__left'), restante(p.expires));
+    numero(left, restante(p.expires), { destello: false });
   }, 1000);
 }
 
@@ -1262,7 +1312,7 @@ function toggleQr() {
   el.innerHTML = `
     <div class="ub-qr__code">${S.qr ? `<img src="${esc(S.qr)}" alt="QR de ${esc(S.url)}">` : ''}</div>
     <div class="ub-qr__text">Escanealo con el teléfono para abrir Umbral en su navegador. Ya va vinculado.</div>
-    <div class="ub-qr__pair">${pairIdleHTML()}</div>
+    <div class="ub-qr__pair op-celda op-celda--start">${pairHTML()}</div>
     <button class="op-btn op-btn--ghost op-btn--sm ub-qr__forget" data-pair="forget"><i data-icon="lock"></i> Olvidar dispositivos</button>`;
   Icons.mount(el);
   el.addEventListener('click', (ev) => {
@@ -1374,6 +1424,8 @@ let updTimer = 0;
 const mb = (b) => (b ? ` · ${Math.round(b / 1048576)} MB` : '');   // que el número no quede solo en un renglón
 const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 
+/* Cada fase dice qué va en el pie: botones (`acts`) o una barra (`bar`, o
+   `indet` mientras busca). Siempre hay algo, así el pie nunca desaparece. */
 function updView(s) {
   switch (s.phase) {
     // El título del release es «Umbral X — qué trae»: arriba la versión, abajo el qué.
@@ -1383,27 +1435,58 @@ function updView(s) {
     case 'downloading': return { ico: 'download', title: `Descargando la ${s.version}`, sub: `${Math.round(s.pct * 100)} %`, bar: s.pct, sticky: true };
     case 'ready': return { ico: 'check', title: `La ${s.version} está lista`, sub: 'Si no reiniciás ahora, se instala cuando salgas de Umbral.',
       acts: [['install', 'Reiniciar', 'op-btn--primary']] };
-    case 'checking': return s.manual && { ico: 'spin', title: 'Buscando actualizaciones', sub: 'Consultando GitHub' };
-    case 'current': return s.manual && { ico: 'check', title: 'Estás al día', sub: `Umbral ${s.current}`, auto: 3200 };
-    case 'error': return s.manual && { ico: 'alert', bad: true, title: 'No se pudo buscar', sub: s.error };
-    case 'unsupported': return s.manual && { ico: 'alert', bad: true, title: 'Sin actualización automática', sub: s.reason };
+    case 'checking': return s.manual && { ico: 'spin', title: 'Buscando actualizaciones', sub: 'Consultando GitHub', indet: true };
+    case 'current': return s.manual && { ico: 'check', title: 'Estás al día', sub: `Umbral ${s.current}`, auto: 3200,
+      acts: [['close', 'Listo', 'op-btn--secondary']] };
+    case 'error': return s.manual && { ico: 'alert', bad: true, title: 'No se pudo buscar', sub: s.error,
+      acts: [['check', 'Reintentar', 'op-btn--secondary']] };
+    case 'unsupported': return s.manual && { ico: 'alert', bad: true, title: 'Sin actualización automática', sub: s.reason,
+      acts: [['close', 'Entendido', 'op-btn--secondary']] };
     default: return null;
   }
 }
 
-function updHTML(v) {
-  const ico = v.ico === 'spin' ? Icons.spinner() : Icons.svg(v.ico);
+/* La tarjeta se arma UNA vez y cada fase pone al día sus partes en su lugar
+   (oct 2026, el arreglo del About de NTX). El pie es una celda: los botones
+   y la barra viven en la misma, que mide lo de los botones, así que la
+   tarjeta no cambia de alto entre fases. La cruz está siempre y mientras baja
+   se apaga. El título y el renglón de abajo se relevan cada uno en su lugar,
+   y el ícono solo si cambia. Antes cada fase rearmaba la tarjeta entera con
+   un relevo (parpadeaba también lo que no cambiaba) y su alto viajaba. */
+function updHTML() {
   return `
     <div class="ub-upd__head">
-      <span class="ub-upd__ico${v.bad ? ' is-bad' : ''}">${ico}</span>
+      <span class="ub-upd__ico"></span>
       <div class="ub-upd__txt">
-        <div class="ub-upd__title">${esc(v.title)}</div>
-        <div class="ub-upd__sub op-copyable">${esc(v.sub || '')}</div>
+        <div class="ub-upd__title"></div>
+        <div class="ub-upd__sub op-copyable"></div>
       </div>
-      ${v.sticky ? '' : `<button class="op-iconbtn op-iconbtn--sm ub-upd__x" data-upd="close" aria-label="Cerrar">${Icons.svg('close')}</button>`}
+      <button class="op-iconbtn op-iconbtn--sm ub-upd__x" data-upd="close" aria-label="Cerrar">${Icons.svg('close')}</button>
     </div>
-    ${v.bar != null ? `<div class="op-meter"><div class="op-meter__fill" style="--op-pct:${(v.bar * 100).toFixed(1)}%"></div></div>` : ''}
-    ${v.acts ? `<div class="ub-upd__acts">${v.acts.map(([a, l, c]) => `<button class="op-btn op-btn--sm ${c}" data-upd="${a}">${esc(l)}</button>`).join('')}</div>` : ''}`;
+    <div class="op-celda op-celda--mid ub-upd__pie">
+      <div class="ub-upd__acts"></div>
+      <div class="op-meter" hidden><div class="op-meter__fill"></div></div>
+    </div>`;
+}
+
+const actsHTML = (acts) => acts.map(([a, l, c]) => `<button class="op-btn op-btn--sm ${c}" data-upd="${a}">${esc(l)}</button>`).join('');
+
+/* Pone la tarjeta en la fase `v`. `primera`: recién armada, todo en el acto. */
+function pintarUpd(el, v, primera) {
+  const q = (sel) => el.querySelector(sel);
+  const poner = (n, html) => { if (primera) n.innerHTML = html; else swap(n, html, { relevo: true }); };
+  poner(q('.ub-upd__ico'), v.ico === 'spin' ? Icons.spinner() : Icons.svg(v.ico));
+  q('.ub-upd__ico').classList.toggle('is-bad', !!v.bad);
+  poner(q('.ub-upd__title'), esc(v.title));
+  poner(q('.ub-upd__sub'), esc(v.sub || ''));
+  const x = q('.ub-upd__x');
+  x.classList.toggle('is-off', !!v.sticky);
+  x.tabIndex = v.sticky ? -1 : 0;
+  const meter = q('.op-meter');
+  meter.classList.toggle('op-meter--indeterminate', !!v.indet);
+  if (v.bar != null) q('.op-meter__fill').style.setProperty('--op-pct', `${(v.bar * 100).toFixed(1)}%`);
+  if (v.acts) poner(q('.ub-upd__acts'), actsHTML(v.acts));
+  celda(q('.ub-upd__pie'), v.acts ? 0 : 1);
 }
 
 function hideUpd() {
@@ -1422,7 +1505,8 @@ function renderUpd(s) {
   if (!upd) {
     upd = document.createElement('div');
     upd.className = 'ub-upd';
-    upd.innerHTML = updHTML(v);
+    upd.innerHTML = updHTML();
+    pintarUpd(upd, v, true);
     upd.addEventListener('click', (e) => {
       const act = e.target.closest('[data-upd]')?.dataset.upd;
       if (!act) return;
@@ -1442,8 +1526,7 @@ function renderUpd(s) {
       { from: parseInt(sub.textContent, 10) });
     vivo('.op-meter__fill')?.style.setProperty('--op-pct', `${(v.bar * 100).toFixed(1)}%`);
   } else if (key !== updKey) {
-    const el = upd;
-    deslizarAlto(el, () => swap(el, updHTML(v), { relevo: true }));
+    pintarUpd(upd, v, false);
   }
   updKey = key;
 
@@ -1522,7 +1605,7 @@ async function boot() {
     t.el.querySelector(':scope > .op-icon')?.replaceWith(thumb);
   });
   api.pair.onDone((d) => {
-    if (pairTimer) { pairStop(); pairSwap(pairIdleHTML('Listo, quedó vinculado.')); }
+    if (pairTimer) { pairStop(); pairIdle('Listo, quedó vinculado.'); }
     Toast.show({ title: 'Celu vinculado', text: d?.device || '', icon: 'check', duration: 3200 });
   });
   api.outbox.onAdded((list, opts) => addOut(list, opts));

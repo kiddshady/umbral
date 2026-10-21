@@ -98,25 +98,13 @@ export function initScrollFades(root = document) {
   root.querySelectorAll('.op-scroll').forEach(scrollFade);
 }
 
-/* ── Indicadores que viajan ─────────────────────────────────────────────────
-   La cápsula del segmentado y el subrayado de los tabs se DESLIZAN entre
-   opciones. Que viajen en vez de saltar es lo que los hace sentir físicos. */
-
-export function syncSegmented(seg) {
-  const opts = [...seg.querySelectorAll('.op-segmented__opt')];
-  if (!opts.length) return;
-  const active = Math.max(0, opts.findIndex((o) => o.classList.contains('is-active')));
-  const w = (seg.clientWidth - 4) / opts.length;
-  seg.style.setProperty('--seg-w', `${w}px`);
-  seg.style.setProperty('--seg', String(active));
-}
-
-export function syncTabs(tabs) {
-  const active = tabs.querySelector('.op-tab.is-active');
-  if (!active) return;
-  tabs.style.setProperty('--tab-x', `${active.offsetLeft}px`);
-  tabs.style.setProperty('--tab-w', `${active.offsetWidth}px`);
-}
+/* ── Segmentados y tabs ─────────────────────────────────────────────────────
+   Cada opción lleva su propia cápsula (o su subrayado) y se prende en su
+   lugar con `.is-active`: no hay nada que medir. Hasta oct 2026 había un solo
+   indicador que viajaba de una opción a la otra, y estas dos funciones le
+   medían el lugar; quedan para no romper a quien las llama. */
+export function syncSegmented() {}
+export function syncTabs() {}
 
 /**
  * Cablea un grupo (segmentado o tabs) para que se comporte solo.
@@ -133,7 +121,7 @@ export function bindSwitcher(root, onChange) {
     if (isSeg) o.setAttribute('aria-pressed', String(on));
     else { o.setAttribute('role', 'tab'); o.setAttribute('aria-selected', String(on)); }
   });
-  const sync = () => { aria(); return isSeg ? syncSegmented(root) : syncTabs(root); };
+  const sync = () => aria();
 
   root.addEventListener('click', (e) => {
     const opt = e.target.closest(optSel);
@@ -144,22 +132,7 @@ export function bindSwitcher(root, onChange) {
     onChange?.(opt.dataset.value, opt);
   });
 
-  new ResizeObserver(sync).observe(root);
-  /* El indicador NACE en su lugar: sin esto pintaba un cuadro en 0 (a la
-     izquierda, sin ancho) y después viajaba hasta la opción activa. Cada
-     vista que se pinta con un segmentado o unos tabs los hacía moverse solos.
-     Solo viaja al elegir. Salvo que ya traiga una posición: la que le devolvió
-     el repintado de la misma vista (repintar). Ese viaja desde ahí, porque es
-     el que se acaba de tocar. */
-  const traido = !!root.style.getPropertyValue(isSeg ? '--seg-w' : '--tab-w');
-  if (!traido) root.dataset.placing = '';
   sync();
-  raf2(() => {
-    sync();   // las fuentes pueden cambiar el ancho después del primer layout
-    if (traido) return;
-    getComputedStyle(root, isSeg ? '::before' : '::after').transform;   // asienta el lugar sin transición
-    delete root.dataset.placing;
-  });
   return sync;
 }
 
@@ -566,6 +539,10 @@ export function swap(el, html, { relevo = false, fundido = false, dir = 0 } = {}
   if (!(fundido && calco)) for (const n of tpl.content.children) entrar(n, quedan || yendose, sentido);
   el.append(tpl.content);
 
+  // Con dirección ya no sube ni baja (hasta oct 2026, 5 px): destella, como
+  // un número que cambió.
+  if (sentido) tick(el);
+
   // El calco, clavado en la caja vieja: medida ya con lo nuevo adentro.
   if (calco) {
     const ahora = cajaDe(el);
@@ -657,9 +634,12 @@ function entrar(n, tarde = false, sentido = '') {
                                  progreso: en su lugar, sin destello)
      valor(el, html)           algo que cambia MUY seguido (las flechas de un
                                  stepper apretadas): siempre en su lugar
+     celda(el, i)                los estados de algo en la misma celda: la
+                                 caja no cambia nunca, se cruzan en su lugar
      deslizarAlto(el, cambio)    la caja va de su alto al nuevo, no salta
      deslizarAncho(el, cambio)   lo mismo a lo ancho (un ítem de una fila)
-     ocupar(btn, ocupado, html)  un botón libre ↔ ocupado: relevo y el ancho viaja
+     ocupar(btn, ocupado, html)  un botón libre ↔ ocupado; con una celda
+                                 adentro, sin cambiar de ancho
      contador(el, n)             un contador que aparece, cambia y se va */
 
 const reducido = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -810,9 +790,32 @@ export function deslizarAncho(el, cambio) {
 }
 
 /**
+ * Prende el estado `i` de una celda (.op-celda, motion.css) y apaga los
+ * demás. Todos los estados están siempre en la misma celda de la grilla, así
+ * que la caja mide lo del más grande desde que nace y no cambia nunca: no
+ * empuja a nadie, ni se corre, ni se achica de golpe. Se cruzan por opacidad
+ * (el que se prende espera a que el otro vaya por la mitad). `el` es la
+ * celda o algo que la tiene adentro (un botón). Es el arreglo del botón de
+ * reiniciar de NTX, hecho pieza (oct 2026). Devuelve la celda.
+ */
+export function celda(el, i) {
+  const c = el?.classList.contains('op-celda') ? el : el?.querySelector(':scope > .op-celda, .op-celda');
+  if (!c) return null;
+  [...c.children].forEach((h, j) => {
+    const on = j === i;
+    h.hidden = !on;
+    if (on) h.removeAttribute('aria-hidden'); else h.setAttribute('aria-hidden', 'true');
+  });
+  return c;
+}
+
+/**
  * Un botón que hace un trabajo, libre ↔ ocupado («Exportar» ↔ «Exportando…»
- * con un spinner): un relevo en el lugar, y el ancho del botón viaja en vez
- * de saltar. `html` es el rótulo del estado al que va.
+ * con un spinner). Con una celda adentro (los dos rótulos ya en el HTML:
+ * `<span class="op-celda"><span>Exportar</span><span hidden>Exportando…</span></span>`)
+ * prende uno u otro en su lugar y el botón no cambia de ancho: es lo que va.
+ * Sin celda (la forma de antes de oct 2026) hace un relevo y el ancho viaja,
+ * empujando a los vecinos; `html` es el rótulo del estado al que va.
  *
  * El estado vive en `data-ocupado` y no en la memoria de swap(): esa memoria
  * es del nodo, y si la vista se repinta en medio del trabajo el botón es OTRO,
@@ -826,6 +829,7 @@ export function ocupar(btn, ocupado, html) {
   if ((btn.dataset.ocupado ?? '0') === v) return;
   btn.dataset.ocupado = v;
   btn.setAttribute('aria-busy', String(!!ocupado));
+  if (celda(btn, ocupado ? 1 : 0)) return;
   deslizarAncho(btn, () => swap(btn, html, { relevo: true }));
 }
 
@@ -1169,14 +1173,6 @@ export function recienCalcado(host) {
   return performance.now() - (host.__calcadoEn ?? -Infinity) < 60;
 }
 
-/* Los indicadores que viajan: dónde está la cápsula (o el subrayado) que se
-   VE, para que la del repintado salga de ahí. El segmentado se mide en
-   opciones (--seg) y ancho de opción (--seg-w); los tabs, en píxeles. */
-const INDICADORES = [
-  { sel: '.op-segmented', pseudo: '::before', poner: (el, x, w) => { el.style.setProperty('--seg-w', `${w}px`); el.style.setProperty('--seg', String(w ? x / w : 0)); } },
-  { sel: '.op-tabs', pseudo: '::after', poner: (el, x, w) => { el.style.setProperty('--tab-x', `${x}px`); el.style.setProperty('--tab-w', `${w}px`); } },
-];
-
 /** Mientras se asienta un repintado, countTo() no cuenta: escribe el valor.
     Cada uno con la pintada que asienta: si go() ya puso otra vista, la nueva
     cuenta como siempre. */
@@ -1185,16 +1181,8 @@ const asentandoAlgo = () => [...asentando].some((a) => a.root.__pinta === a.pint
 
 /** El lugar de una vista, antes de repintarla. Se reconoce por ids. */
 function fotografiar(root) {
-  const f = { scrolls: [], indicadores: new Map(), revelados: [], foco: null };
+  const f = { scrolls: [], revelados: [], foco: null };
   root.querySelectorAll('.op-scroll').forEach((el) => f.scrolls.push(el.scrollTop));
-  for (const ind of INDICADORES) {
-    root.querySelectorAll(`${ind.sel}[id]`).forEach((el) => {
-      // Lo que se VE, no el destino: si la cápsula venía viajando, sigue desde ahí.
-      const cs = getComputedStyle(el, ind.pseudo);
-      const x = cs.transform && cs.transform !== 'none' ? new DOMMatrixReadOnly(cs.transform).m41 : 0;
-      f.indicadores.set(el.id, { ind, x, w: parseFloat(cs.width) || 0 });
-    });
-  }
   root.querySelectorAll('.op-reveal.is-open[id]').forEach((el) => f.revelados.push(el.id));
   const act = document.activeElement;
   const dueño = act && root.contains(act) ? act.closest('[id]') : null;
@@ -1206,19 +1194,11 @@ function fotografiar(root) {
   return f;
 }
 
-/** Lo que la vista tiene que ver ANTES de cablearse: revelados e indicadores. */
+/** Lo que la vista tiene que ver ANTES de cablearse: los revelados. (Los
+    segmentados y los tabs ya no tienen un indicador que viaje: cada opción
+    prende el suyo, así que no hay lugar que devolverles.) */
 function devolverAlPintar(root, f) {
   for (const id of f.revelados) root.querySelector(`#${CSS.escape(id)}`)?.classList.add('is-open');
-  for (const [id, { ind, x, w }] of f.indicadores) {
-    const el = root.querySelector(`#${CSS.escape(id)}`);
-    if (!el?.matches(ind.sel) || !w) continue;
-    // Puesto sin viajar: bindSwitcher lo ve ya ubicado y, si la opción
-    // activa es otra, lo lleva desde ahí.
-    el.dataset.placing = '';
-    ind.poner(el, x, w);
-    void getComputedStyle(el, ind.pseudo).transform;
-    delete el.dataset.placing;
-  }
 }
 
 /**

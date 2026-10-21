@@ -3,10 +3,18 @@
    Nada aparece ni desaparece de golpe. El movimiento es lo que comunica causa
    y efecto; sin él la app se siente barata y sobresalta.
 
-   La firma de Opal es AFLORAR: lo que aparece sube hacia la superficie del
-   vidrio (eje Y, apenas) y se materializa. Donde Onyx avanza sobre el eje del
-   flujo, Opal emerge — como algo que se acerca desde detrás de la hoja. El
-   glide sobre X queda disponible para lo que sí es secuencia.
+   La firma de Opal es MATERIALIZARSE EN SU LUGAR: lo que aparece se enciende
+   donde va a quedar, sin subir ni deslizarse, y lo que se va se apaga donde
+   estaba. Nada cambia de lugar para entrar o salir (Fran, oct 2026: «botones
+   saltando»). Hasta entonces Opal afloraba (subía 8 px), los toasts entraban
+   de costado y el modal subía con peso. Las clases de entrada conservan sus
+   nombres (.op-in-rise, …) para no romper a quien las usa, pero todas son un
+   fundido.
+
+   Lo que de verdad cambia de forma no viaja: o se reserva el lugar (una
+   celda que mide lo del estado más grande: .op-celda y celda() en
+   motion.js) o se acomoda debajo de un fundido (swap con `fundido`,
+   dissolve(), calcar()).
 
    Regla de oro de las salidas: un nodo que se va del DOM tiene que TERMINAR su
    animación antes de irse. Eso lo maneja exit() en motion.js, que le pone
@@ -22,25 +30,10 @@
 @keyframes op-fade-in    { from { opacity: 0 } to { opacity: 1 } }
 @keyframes op-fade-out   { from { opacity: 1 } to { opacity: 0 } }
 
-/* La firma: sube y se materializa. */
-@keyframes op-rise-in    { from { opacity: 0; transform: translateY(8px)  } to { opacity: 1; transform: none } }
-@keyframes op-rise-out   { from { opacity: 1; transform: none } to { opacity: 0; transform: translateY(4px) } }
-
-/* Entrada sobre el eje del flujo, para lo que sí es secuencia. */
-@keyframes op-glide-in   { from { opacity: 0; transform: translateX(-10px) } to { opacity: 1; transform: none } }
-@keyframes op-glide-out  { from { opacity: 1; transform: none } to { opacity: 0; transform: translateX(6px) } }
-
-/* Overlays: crecen desde su origen, apenas. */
+/* El tooltip todavía crece desde su punta: queda pendiente de que Fran lo
+   mire (en la demo de la auditoría no se veía). Es lo único que se mueve. */
 @keyframes op-pop-in     { from { opacity: 0; transform: scale(.965) translateY(-4px) } to { opacity: 1; transform: none } }
 @keyframes op-pop-out    { from { opacity: 1; transform: none } to { opacity: 0; transform: scale(.98) translateY(-2px) } }
-
-/* Modal: entra desde abajo con peso. */
-@keyframes op-lift-in    { from { opacity: 0; transform: translateY(14px) scale(.985) } to { opacity: 1; transform: none } }
-@keyframes op-lift-out   { from { opacity: 1; transform: none } to { opacity: 0; transform: translateY(6px) scale(.99) } }
-
-/* Toast: entra desde el borde derecho. */
-@keyframes op-slide-in-r { from { opacity: 0; transform: translateX(24px) } to { opacity: 1; transform: none } }
-@keyframes op-slide-out-r{ from { opacity: 1; transform: none } to { opacity: 0; transform: translateX(16px) } }
 
 /* "Corriendo": lo único que respira en toda la pantalla. */
 @keyframes op-breathe {
@@ -75,22 +68,22 @@
   100% { color: inherit }
 }
 
-/* Fallo: un temblor corto y seco. Se usa UNA vez, cuando algo se rompe. */
+/* Fallo: un aro rojo que se enciende alrededor y se apaga, en su lugar. Se
+   usa UNA vez, cuando algo se rompe. Antes temblaba (−4, +3, −2, +1 px). Es
+   un outline y no una sombra: no le pisa la suya a un campo o a un botón. */
 @keyframes op-shake {
-  0%, 100% { transform: translateX(0) }
-  20%      { transform: translateX(-4px) }
-  40%      { transform: translateX(3px) }
-  60%      { transform: translateX(-2px) }
-  80%      { transform: translateX(1px) }
+  0%   { outline: 2px solid rgb(var(--op-danger-rgb) / 0);   outline-offset: 2px }
+  25%  { outline: 2px solid rgb(var(--op-danger-rgb) / .55); outline-offset: 2px }
+  100% { outline: 2px solid rgb(var(--op-danger-rgb) / 0);   outline-offset: 2px }
 }
 
 /* ── Clases de entrada ───────────────────────────────────────────────────────
    Se aplican al montar. `--i` escalona (stagger) los hijos de una lista:
-   style="--i:3" → arranca 3 × 26 ms después. */
-.op-in-fade  { animation: op-fade-in  var(--op-t-3) var(--op-ease) both; }
-.op-in-rise  { animation: op-rise-in  var(--op-t-3) var(--op-ease) both; }
-.op-in-glide { animation: op-glide-in var(--op-t-3) var(--op-ease) both; }
-.op-in-pop   { animation: op-pop-in   var(--op-t-2) var(--op-ease) both; }
+   style="--i:3" → arranca 3 × 26 ms después. Las cuatro son un fundido en su
+   lugar; rise, glide y pop quedan como nombres para no romper a quien las
+   usa, con sus tiempos (pop es la más rápida). */
+.op-in-fade, .op-in-rise, .op-in-glide { animation: op-fade-in var(--op-t-3) var(--op-ease) both; }
+.op-in-pop   { animation: op-fade-in var(--op-t-2) var(--op-ease) both; }
 
 .op-in-fade, .op-in-rise, .op-in-glide, .op-in-pop {
   animation-delay: calc(var(--i, 0) * 26ms);
@@ -99,10 +92,7 @@
 /* ── Salidas ─────────────────────────────────────────────────────────────────
    exit() pone data-state="closing" y espera. Las salidas van más rápido
    que las entradas: irse debe sentirse decidido, llegar debe sentirse suave. */
-[data-state='closing'].op-in-fade  { animation: op-fade-out  var(--op-t-1) var(--op-ease-in) both; }
-[data-state='closing'].op-in-rise  { animation: op-rise-out  var(--op-t-1) var(--op-ease-in) both; }
-[data-state='closing'].op-in-glide { animation: op-glide-out var(--op-t-1) var(--op-ease-in) both; }
-[data-state='closing'].op-in-pop   { animation: op-pop-out   var(--op-t-1) var(--op-ease-in) both; }
+[data-state='closing']:is(.op-in-fade, .op-in-rise, .op-in-glide, .op-in-pop) { animation: op-fade-out var(--op-t-1) var(--op-ease-in) both; }
 
 /* ── Click-flash ─────────────────────────────────────────────────────────────
    Un velo de luz que nace en el press y decae. No es un ripple de Material:
@@ -132,89 +122,96 @@
 /* ── Plegable: lo que se prende y se apaga con `hidden` ─────────────────────
    `.op-reveal` es para cuando manejás una clase y tenés un envoltorio. Esto es
    para lo que ya se prende con `el.hidden = …`: una barra que aparece, un
-   progreso, una pista, un dato de la statusbar. Con `display: none` a secas
-   eso aparece y se va de un cuadro al otro, y empuja de golpe a lo que tiene
-   al lado. De Onyx (octubre de 2026), que lo sacó de Quire.
+   progreso, una pista, un dato de la statusbar. El JS no cambia: sigue
+   siendo `el.hidden`.
 
-   El JS no cambia: sigue siendo `el.hidden`. El alto (o el ancho, con
-   `--ancho`) se pliega hasta 0 mientras se desvanece, y recién al final pasa
-   a `display: none` (`allow-discrete`). Al aparecer, `@starting-style` le da
-   de dónde salir, e `interpolate-size` es lo que deja ir de 0 a `auto`.
+   Desde octubre de 2026 se APAGA EN SU LUGAR y guarda su hueco: la opacidad
+   va a 0 y nada de alrededor se mueve. Antes se plegaba a alto (o ancho) 0
+   mientras se desvanecía, y todo lo que estaba después viajaba a ocupar el
+   hueco: el chip «último» se corría de costado y lo de abajo subía (Fran:
+   «botones saltando»). Si el hueco de verdad tiene que liberarse (una
+   sección que se cierra), eso es un cambio de forma y va debajo de un
+   fundido (swap con `fundido`, dissolve()).
 
-   - El mínimo en 0 es lo que deja llegar a 0: en un flex, el `min-height:
-     auto` del ítem lo frenaba en el alto de su contenido y ahí se cortaba de
-     golpe.
-   - La clase va DOBLE a propósito. motion.css se carga antes que controls y
-     surfaces, y la `transition` de un `.op-chip` o un `.op-btn` le ganaba por
-     orden a la de acá con la misma especificidad: el pliegue no se animaba.
-     Con la clase doble gana esta, y por eso la lista repite las transiciones
-     de esos componentes (`--tr-color` y el transform del press).
-   - Trae su propio `[hidden] { display: none }`, así que sirve también sobre
-     algo que declara su `display` (un `.op-btn` es inline-flex y le gana al
-     `hidden` del navegador).
-
-   Ojo con el vidrio: plegar el alto relayouta en cada cuadro. Un plegable que
-   es él mismo una hoja con `backdrop-filter` recalcula el blur en cada uno
-   (el blur no se anima, pero su caja sí). Plegá lo que vive ADENTRO de la
-   hoja, que es relleno sin blur, no la hoja. Y si lo de abajo reacciona al
-   tamaño (un ResizeObserver que redibuja), que espere a que termine. */
+   - El `[hidden]` del navegador es `display: none`. Este lo pisa con
+     especificidad cero (:where): un componente que declara su `display` (un
+     .op-chip es inline-flex) se queda con el suyo, y uno que no declara nada
+     (un div) queda en bloque.
+   - `--ancho` (para una fila) es lo mismo; se llama distinto porque antes
+     plegaba el ancho. Queda en línea si nadie dice otra cosa.
+   - Apagado no toma clicks ni foco (`visibility`, que llega cuando terminó
+     de apagarse). Al prenderse espera un poco por si en el mismo lugar se
+     estaba apagando otro (el relevo). */
+:where(.op-plegable[hidden]) { display: block; }
+:where(.op-plegable--ancho) { display: inline-block; }
 .op-plegable.op-plegable,
 .op-plegable--ancho.op-plegable--ancho {
-  interpolate-size: allow-keywords;
-  overflow: clip;
-  min-height: 0;
   transition:
     var(--tr-color),
-    transform var(--op-t-1) var(--op-ease-soft),
-    height var(--op-t-2) var(--op-ease-both),
-    width var(--op-t-2) var(--op-ease-both),
-    padding var(--op-t-2) var(--op-ease-both),
-    margin var(--op-t-2) var(--op-ease-both),
-    opacity var(--op-t-2) var(--op-ease-soft),
-    display var(--op-t-2) allow-discrete;
+    opacity var(--op-t-2) var(--op-ease-soft) 60ms,
+    visibility 0s;
 }
-/* En una columna: plegado a alto 0, el ítem igual cuenta un hueco del `gap`,
-   que desaparecía de golpe al final (cuando pasa a display:none). El margen
-   de arriba negativo se lo come de a poco, junto con el alto. La columna
-   declara cuánto con `--op-plegable-gap` (un .op-field ya lo trae); sin
-   declararlo es 0. */
-.op-plegable[hidden] {
-  display: none; height: 0; padding-block: 0; opacity: 0;
-  margin-block: calc(-1 * var(--op-plegable-gap, 0px)) 0;
+.op-plegable.op-plegable[hidden],
+.op-plegable--ancho.op-plegable--ancho[hidden] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    var(--tr-color),
+    opacity var(--op-t-out) var(--op-ease-both),
+    visibility 0s linear var(--op-t-out);
 }
-@starting-style {
-  .op-plegable:not([hidden]) {
-    height: 0; padding-block: 0; opacity: 0;
-    margin-block: calc(-1 * var(--op-plegable-gap, 0px)) 0;
-  }
-}
+.op-plegable--ancho { white-space: nowrap; }
 
 /* Asentado (asentarPlegables, en motion.js): al repintar la misma vista, lo
-   que nace visible ya estaba a la vista y no se vuelve a desplegar desde 0
-   debajo del fundido. Tres clases para ganarle a la doble de arriba. */
+   que nace visible ya estaba a la vista y no se vuelve a encender debajo del
+   fundido. Tres clases para ganarle a la doble de arriba. */
 .op-plegable.op-plegable.is-placing,
 .op-plegable--ancho.op-plegable--ancho.is-placing { transition: none; }
 
-/* Plegado de ancho, para una fila. Un ítem de ancho 0 igual cuenta un hueco
-   del `gap` de su fila: por eso el margen negativo, que es
-   `--op-plegable-gap` (la fila lo declara; la statusbar ya lo trae). */
-.op-plegable--ancho { white-space: nowrap; min-width: 0; }
-.op-plegable--ancho[hidden] {
-  display: none; width: 0; padding-inline: 0; opacity: 0;
-  margin-inline-end: calc(-1 * var(--op-plegable-gap, 0px));
+/* ── Celda: los estados de algo, en el mismo lugar ──────────────────────────
+   Un botón que cambia de rótulo (Copiar → Copiado, Exportar → Exportando…),
+   una píldora, el pie de una tarjeta que es botones o una barra: todos sus
+   estados viven en la misma celda de una grilla, así que la caja mide lo
+   del más grande desde que nace y no cambia nunca. Se cruzan solo por
+   opacidad: el que se prende espera a que el que se apaga vaya por la mitad.
+   Es el arreglo del botón de reiniciar de NTX (oct 2026), hecho pieza.
+
+     <span class="op-celda">
+       <span>Copiar</span>
+       <span hidden>Copiado</span>
+     </span>
+     celda(el, 1)   // motion.js: prende el segundo, apaga los demás
+
+   Los estados se apagan con `hidden`, que acá no saca nada del flujo: cada
+   uno sigue midiendo. Centrados de fábrica; `--start` y `--end` los alinean
+   a un borde. Un estado con varias cosas adentro (ícono y rótulo) es un
+   inline-flex; `--mid` los centra en alto (una barra en el alto de dos
+   botones). */
+.op-celda { display: inline-grid; justify-items: center; }
+.op-celda--start { justify-items: start; }
+.op-celda--end { justify-items: end; }
+.op-celda--mid { align-items: center; }
+.op-celda > * {
+  grid-area: 1 / 1;
+  transition: opacity var(--op-t-2) var(--op-ease-soft) 80ms, visibility 0s;
 }
-@starting-style {
-  .op-plegable--ancho:not([hidden]) {
-    width: 0; padding-inline: 0; opacity: 0;
-    margin-inline-end: calc(-1 * var(--op-plegable-gap, 0px));
-  }
+.op-celda > span { display: inline-flex; align-items: center; gap: var(--op-2); }
+.op-celda > [hidden] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--op-t-out) var(--op-ease-both), visibility 0s linear var(--op-t-out);
 }
+/* El `hidden` del navegador sacaría al estado del flujo: con especificidad
+   cero, lo que declara su display (una fila de botones) se queda con el suyo. */
+:where(.op-celda > [hidden]) { display: block; }
 
 /* ── Estados vivos ───────────────────────────────────────────────────────── */
 .op-breathing { animation: op-breathe 2.2s var(--op-ease-both) infinite; }
 .op-spinning  { animation: op-spin 900ms linear infinite; }
 .op-ticked    { animation: op-tick 700ms var(--op-ease-soft); }
-.op-shaking   { animation: op-shake 380ms var(--op-ease-both); }
+.op-shaking   { animation: op-shake 700ms var(--op-ease-soft); }
 
 /* ── Skeleton ────────────────────────────────────────────────────────────── */
 .op-skeleton {
@@ -240,13 +237,9 @@
    volvería frontera de backdrop para siempre — una hoja de vidrio adentro
    quedaría ciega (la regla de las hojas, README). */
 :where(.op-swap-in) { animation: op-fade-in var(--op-t-2) var(--op-ease-soft) both; }
-/* Con dirección (swap con `dir`): un contador que avanza sube, uno que
-   retrocede baja. */
-:where(.op-swap-in--up)   { animation-name: op-swap-up-in; }
-:where(.op-swap-in--down) { animation-name: op-swap-down-in; }
-/* Un transform no mueve algo en línea: el texto suelto que envolvió swap()
-   sube o baja como bloque en línea (es corto: un número, una palabra). */
-.op-swap-texto:is(.op-swap-in--up, .op-swap-in--down) { display: inline-block; }
+/* Con dirección (swap con `dir`) ya no sube ni baja (hasta oct 2026, 5 px):
+   se releva en su lugar y el contenedor destella (motion.js), como un número
+   que cambió. */
 .op-swap-in.is-after { animation-delay: 70ms; }
 .op-swap-in.is-settled { animation: none; }
 .op-swap-host { position: relative; }
@@ -280,8 +273,6 @@
 /* In-out y no ease-in: hay alguien esperando detrás. Sin `from`: parte de
    donde esté, aunque lo agarre entrando. */
 .op-swap-out[data-state='closing'] { animation: op-swap-out var(--op-t-out) var(--op-ease-both) both; }
-.op-swap-out--up[data-state='closing']   { animation-name: op-swap-up-out; }
-.op-swap-out--down[data-state='closing'] { animation-name: op-swap-down-out; }
 /* El fundido de un bloque grande (swap con `fundido`): el calco, con el fondo
    opaco que le pone el JS, va por encima del `th` sticky de la tabla nueva
    (z-index 2) y se esfuma en `t-2`. Solo acá: un relevo chico adentro de una
@@ -290,10 +281,6 @@
 .op-swap-out--fundido[data-state='closing'] { animation: op-dissolve var(--op-t-2) var(--op-ease-both) both; }
 
 @keyframes op-swap-out      { to { opacity: 0 } }
-@keyframes op-swap-up-in    { from { opacity: 0; transform: translateY(5px) } to { opacity: 1; transform: none } }
-@keyframes op-swap-up-out   { to { opacity: 0; transform: translateY(-5px) } }
-@keyframes op-swap-down-in  { from { opacity: 0; transform: translateY(-5px) } to { opacity: 1; transform: none } }
-@keyframes op-swap-down-out { to { opacity: 0; transform: translateY(5px) } }
 
 /* ── Fundido (dissolve() en motion.js) ───────────────────────────────────────
    El calco de lo que se va, encima de lo nuevo. Cada superficie le pone su
@@ -303,9 +290,8 @@
 @keyframes op-dissolve { to { opacity: 0 } }
 
 /* ── Transición de vista ─────────────────────────────────────────────────────
-   Al arrancar, la vista AFLORA: sube apenas y se materializa. Es la firma de
-   Opal: lo nuevo emerge hacia la superficie del vidrio. */
-.op-view { animation: op-rise-in var(--op-t-4) var(--op-ease) both; }
+   Al arrancar, la vista se materializa en su lugar (hasta oct 2026 subía 8 px). */
+.op-view { animation: op-fade-in var(--op-t-4) var(--op-ease) both; }
 
 /* Al cambiar de sección (y al repintar la misma), un fundido: la vieja pasa a
    un calco (.op-main--saliente, lo arma calcar() en motion.js) en la misma
