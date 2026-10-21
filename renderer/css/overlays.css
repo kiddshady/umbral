@@ -1,36 +1,48 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   ONYX — overlays
-   Tooltip, menú, modal y toast. Todos portaleados a #ox-layer,
+   OPAL — overlays
+   Tooltip, menú, modal y toast. Todos portaleados a #op-layer,
    todos con entrada Y salida (nada se corta al cerrarse), todos propios: ni un
    title= nativo, ni un confirm() del sistema.
+
+   Acá vive el vidrio en su mejor momento: un overlay flota sobre CONTENIDO —
+   texto, listas, color— y el blur convierte todo eso en profundidad. Por eso
+   los overlays sí llevan backdrop-filter, y lo que vive adentro de ellos, no.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-#ox-layer {
+#op-layer {
   position: fixed;
   inset: 0;
   z-index: 100;
   pointer-events: none;
 }
-#ox-layer > * { pointer-events: auto; }
+#op-layer > * { pointer-events: auto; }
 
 /* ── Tooltip ─────────────────────────────────────────────────────────────────
    Reemplaza al title= nativo (amarillo, lento, inestilable). Se declara con
    data-tip / data-tip-side y lo maneja tooltip.js. */
-.ox-tooltip {
+.op-tooltip {
   position: absolute;
   max-width: 260px;
-  padding: 5px var(--ox-2);
-  border-radius: var(--ox-r-sm);
-  background: var(--ox-s4);
-  color: var(--ox-text);
-  font-size: var(--ox-fs-11);
+  padding: 5px var(--op-2);
+  border-radius: var(--op-r-md);
+  background: var(--op-s3);
+  backdrop-filter: var(--op-glass);
+  color: var(--op-text);
+  font-size: var(--op-fs-11);
   line-height: 1.45;
-  box-shadow: var(--ox-hairline), var(--ox-e3);
-  animation: ox-pop-in var(--ox-t-2) var(--ox-ease) both;
+  /* Centrado y a prueba de rutas: la caja ya se centra sobre su ancla
+     (tooltip.js), el texto acompaña. Y una cadena sin espacios —
+     C:\...\Roaming\App\data — no tiene dónde partirse: sin `anywhere`
+     desborda la burbuja en vez de envolver, y el tooltip sale con el
+     texto colgando afuera del vidrio. */
+  text-align: center;
+  overflow-wrap: anywhere;
+  box-shadow: var(--op-sheet), var(--op-e3);
+  animation: op-pop-in var(--op-t-2) var(--op-ease) both;
   will-change: transform, opacity;
 }
-.ox-tooltip[data-state='closing'] { animation: ox-pop-out 100ms var(--ox-ease-in) both; }
-.ox-tooltip__key { margin-left: var(--ox-2); color: var(--ox-text-4); }
+.op-tooltip[data-state='closing'] { animation: op-pop-out var(--op-t-1) var(--op-ease-in) both; }
+.op-tooltip__key { margin-left: var(--op-2); color: var(--op-text-3); }
 
 /* ── Menú contextual / dropdown ──────────────────────────────────────────── */
 /* Los overlays que scrollean también se esfuman: la regla del corte-nunca no
@@ -39,119 +51,127 @@
 
    Pero estos dos están casi todos cerrados por una línea, y el fade solo va
    donde el corte es al aire. El único lado al aire acá es el de arriba del
-   modal, contra su cabecera. Cada --ox-fade se queda igual aunque el lado esté
+   modal, contra su cabecera. Cada --op-fade se queda igual aunque el lado esté
    apagado: es la escala del esfumado de esa superficie, y si mañana desaparece
    la pieza que la cierra, el fade tiene que volver con el tamaño correcto. */
-.ox-menu.ox-scroll,
-.ox-modal__body.ox-scroll { overflow-x: hidden; }
-.ox-menu.ox-scroll        { --ox-fade: 10px; padding-top: 10px; padding-bottom: 10px; }
-.ox-modal__body.ox-scroll { --ox-fade: 20px; padding-top: 20px; padding-bottom: 20px; }
+.op-menu.op-scroll,
+.op-modal__body.op-scroll { overflow-x: hidden; }
+.op-menu.op-scroll        { --op-fade: 10px; padding-top: 10px; padding-bottom: 10px; }
+.op-modal__body.op-scroll { --op-fade: 20px; padding-top: 20px; padding-bottom: 20px; }
 
 /* El menú es su propio marco: el hairline lo cierra por los cuatro lados. Acá
    el fade no solo sobraba — como la máscara y el borde viven en el MISMO
    elemento, se comía el hairline justo arriba y abajo y dejaba el marco abierto. */
-.ox-menu.ox-scroll {
-  --ox-fade-top: 0px;
-  --ox-fade-bottom: 0px;
+.op-menu.op-scroll {
+  --op-fade-top: 0px;
+  --op-fade-bottom: 0px;
   mask-image: none;
 }
 /* El modal corta al aire arriba (la cabecera no lleva línea) y contra el pie abajo. */
-.ox-modal__body:has(~ .ox-modal__foot)     { --ox-fade-bottom: 0px; }
+.op-modal__body:has(~ .op-modal__foot)     { --op-fade-bottom: 0px; }
 
-.ox-menu {
+/* El ancla de Menu.showAt: un punto invisible donde fue el click derecho. */
+.op-anchor { position: fixed; width: 1px; height: 1px; pointer-events: none; }
+
+/* El alto lo pone Menu.show: el lugar que hay desde el ancla. Esto es solo
+   el tope de la ventana entera, para medirlo. */
+.op-menu {
   position: absolute;
   min-width: 180px;
-  max-height: 60vh;
-  padding: var(--ox-1);
-  border-radius: var(--ox-r-md);
-  background: var(--ox-s3);
-  box-shadow: var(--ox-hairline), var(--ox-e4);
+  max-height: calc(100vh - 20px);
+  padding: var(--op-1);
+  border-radius: var(--op-r-lg);
+  background: var(--op-flota);   /* del tono de las tarjetas: ver tokens.css */
+  backdrop-filter: var(--op-glass-heavy);
+  box-shadow: var(--op-sheet), var(--op-e4);
   overflow-y: auto;
-  animation: ox-pop-in var(--ox-t-2) var(--ox-ease) both;
+  /* Entra y sale SOLO por opacidad, sin el pop (escala y desplazamiento).
+     Moviéndose, Chromium deja ver el desenfoque de atrás en el canto de
+     arriba: sobre algo claro, una línea clara. Con el vidrio lavado de antes
+     no se notaba porque el cuerpo era igual de claro; con la base oscura de
+     --op-flota sí (medido sobre blanco: canto 164 contra 75 quieto, aun con
+     la base opaca). Quieto en su lugar, el canto es el de siempre. */
+  animation: op-fade-in var(--op-t-2) var(--op-ease) both;
   transform-origin: var(--origin, top left);
 }
-.ox-menu[data-state='closing'] { animation: ox-pop-out 110ms var(--ox-ease-in) both; }
-.ox-menuitem {
+.op-menu[data-state='closing'] { animation: op-fade-out var(--op-t-1) var(--op-ease-in) both; }
+/* Un menú que no entra entero: la barrita se ve mientras quede algo
+   escondido arriba o abajo (el fade no va acá: se come el hairline). */
+.op-menu.op-scroll:not(.is-bottom)::-webkit-scrollbar-thumb,
+.op-menu.op-scroll:not(.is-top)::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, .14); }
+.op-menu.op-scroll::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, .22); }
+.op-menuitem {
   display: flex;
   align-items: center;
-  gap: var(--ox-3);
+  gap: var(--op-3);
   width: 100%;
   height: 28px;
-  padding: 0 var(--ox-2);
+  padding: 0 var(--op-2);
   border: 0;
-  border-radius: var(--ox-r-sm);
+  border-radius: var(--op-r-sm);
   background: transparent;
-  color: var(--ox-text-2);
-  font-size: var(--ox-fs-12);
+  color: var(--op-text-2);
+  font-size: var(--op-fs-12);
   text-align: left;
   cursor: default;
   transition: var(--tr-color);
 }
-.ox-menuitem .ox-icon { width: 14px; height: 14px; color: var(--ox-text-4); transition: color var(--ox-t-1) var(--ox-ease-soft); }
-.ox-menuitem:hover, .ox-menuitem.is-active { background: var(--ox-wash-2); color: var(--ox-text); }
-.ox-menuitem:hover .ox-icon, .ox-menuitem.is-active .ox-icon { color: var(--ox-text-2); }
-.ox-menuitem.is-selected .ox-icon:last-child { color: var(--ox-accent); }
-/* El peligro tiene que ganarle al resaltado, y por especificidad venía
-   perdiendo. `.ox-menuitem:hover .ox-icon` es (0,3,0) y `.ox-menuitem--danger
-   .ox-icon` es (0,2,0): al pasar el mouse por encima, el tachito se volvía gris
-   mientras el texto y el fondo seguían rojos —el ícono decía una cosa y el
-   resto de la fila decía otra—. Con is-active, que es el resaltado del teclado,
-   era peor: se caía TODO el rojo y Eliminar quedaba igual que Duplicar.
-
-   El arreglo no es inflar la especificidad con un truco, es nombrar los tres
-   estados. Reposo, mouse encima y foco de teclado son el mismo item peligroso y
-   se pintan igual; escribirlos así los empata con las reglas de arriba y, al
-   venir después, ganan. De paso el que navega con el teclado ve lo mismo que el
-   que navega con el mouse, que hasta acá no pasaba. */
-.ox-menuitem--danger,
-.ox-menuitem--danger:hover,
-.ox-menuitem--danger.is-active { color: var(--ox-danger); }
-.ox-menuitem--danger:hover,
-.ox-menuitem--danger.is-active { background: var(--ox-danger-wash); }
-.ox-menuitem--danger .ox-icon,
-.ox-menuitem--danger:hover .ox-icon,
-.ox-menuitem--danger.is-active .ox-icon { color: var(--ox-danger); }
-.ox-menuitem__key { margin-left: auto; font-size: var(--ox-fs-10); color: var(--ox-text-4); }
-/* La aclaración de un ítem (`hint`): atenuada y a la derecha del nombre, que
-   es el que cede si no entra. Con el resaltado sube un escalón, como el ícono.
-   Si además hay atajo, el atajo va pegado a ella (el `gap` los separa). */
-.ox-menuitem__hint {
-  flex: 0 0 auto;
-  margin-left: auto;
-  font-size: var(--ox-fs-11);
-  color: var(--ox-text-4);
-  white-space: nowrap;
-  transition: color var(--ox-t-1) var(--ox-ease-soft);
+.op-menuitem .op-icon { width: 14px; height: 14px; color: var(--op-text-3); transition: color var(--op-t-1) var(--op-ease-soft); }
+.op-menuitem:hover, .op-menuitem.is-active { background: var(--op-wash-2); color: var(--op-text); }
+.op-menuitem:hover .op-icon, .op-menuitem.is-active .op-icon { color: var(--op-text-2); }
+.op-menuitem.is-selected .op-icon:last-child { color: var(--op-accent); }
+/* Lo que no se puede ahora (Copiar sin nada seleccionado) se ve apagado y no
+   reacciona al pasar: las flechas del teclado ya lo saltean (overlays.js).
+   Sin esto se veía igual que los demás y se iluminaba con el mouse, pero el
+   click no hacía nada: parecía roto. */
+.op-menuitem:disabled { opacity: .38; }
+.op-menuitem:disabled:hover { background: transparent; color: var(--op-text-2); }
+.op-menuitem:disabled:hover .op-icon { color: var(--op-text-3); }
+.op-menuitem--danger { color: var(--op-danger); }
+.op-menuitem--danger .op-icon { color: var(--op-danger); }
+/* Reposo, mouse encima y resaltado por teclado son el mismo ítem peligroso y
+   se pintan igual. Sin el .is-active, con las flechas el texto se iba al
+   blanco del resaltado genérico y «Eliminar» quedaba igual que el resto (lo
+   cazó el humo de Nexus). */
+.op-menuitem--danger:hover,
+.op-menuitem--danger.is-active { background: var(--op-danger-wash); color: var(--op-danger); }
+/* Con :hover, la regla genérica de arriba (`.op-menuitem:hover .op-icon`)
+   pesa 0-3-0 y le gana al 0-2-0 del danger: el tacho volvía a gris justo
+   cuando el mouse se paraba encima. Misma especificidad, declarada después. */
+.op-menuitem--danger:hover .op-icon,
+.op-menuitem--danger.is-active .op-icon { color: var(--op-danger); }
+/* El puntito de color de un ítem (`dot`): 10 + 2 + 2 = los 14 px de un ícono,
+   así una fila con punto y una con ícono alinean el rótulo. El canto claro lo
+   separa del vidrio cuando el color es oscuro. */
+.op-menuitem__dot {
+  width: 10px; height: 10px; margin: 0 2px; flex: 0 0 auto;
+  border-radius: 50%;
+  box-shadow: var(--op-hairline);
 }
-.ox-menuitem:hover .ox-menuitem__hint,
-.ox-menuitem.is-active .ox-menuitem__hint { color: var(--ox-text-3); }
-.ox-menuitem__hint + .ox-menuitem__key { margin-left: 0; }
-.ox-menu__sep { height: 1px; margin: var(--ox-1) var(--ox-2); background: var(--ox-line); }
-.ox-menu__label {
-  padding: var(--ox-2) var(--ox-2) var(--ox-1);
-  font-size: var(--ox-fs-10);
-  font-weight: var(--ox-w-semi);
-  letter-spacing: var(--ox-track-caps);
+.op-menuitem__key { margin-left: auto; font-size: var(--op-fs-10); color: var(--op-text-3); }
+.op-menu__sep { height: 1px; margin: var(--op-1) var(--op-2); background: var(--op-line); }
+.op-menu__label {
+  padding: var(--op-2) var(--op-2) var(--op-1);
+  font-size: var(--op-fs-10);
+  font-weight: var(--op-w-semi);
+  letter-spacing: var(--op-track-caps);
   text-transform: uppercase;
-  color: var(--ox-text-4);
+  color: var(--op-text-3);
 }
 
 /* ── Modal ───────────────────────────────────────────────────────────────── */
-.ox-scrim {
+/* El scrim ES vidrio: esmerila la app entera detrás del diálogo. Es el momento
+   más glassmorphism del sistema, y también el más caro — por eso solo existe
+   mientras hay un modal abierto, y el blur en sí no se anima nunca (entra y
+   sale por opacity). */
+.op-scrim {
   position: fixed;
   inset: 0;
-  background: rgba(4, 5, 6, .62);
-  backdrop-filter: blur(2px);
-  animation: ox-fade-in var(--ox-t-3) var(--ox-ease) both;
+  background: var(--op-scrim);
+  backdrop-filter: blur(10px) saturate(120%);
+  animation: op-fade-in var(--op-t-3) var(--op-ease) both;
 }
-/* El velo que se estaba yendo y vuelve, porque otro modal abrió enseguida
-   (Modal.show): sube desde la opacidad en que iba, que el JS deja en
-   --ox-desde. Otro velo nuevo debajo del que se va apilaba dos capas y
-   oscurecía la pantalla en el medio del cambio. Declarado antes de la
-   salida, para que la salida le gane si se vuelve a cerrar. */
-@keyframes ox-velo-vuelve { from { opacity: var(--ox-desde, 0) } to { opacity: 1 } }
-.ox-scrim--vuelve { animation: ox-velo-vuelve var(--ox-t-3) var(--ox-ease) both; }
-.ox-scrim[data-state='closing'] { animation: ox-fade-out var(--ox-t-2) var(--ox-ease-in) both; }
+.op-scrim[data-state='closing'] { animation: op-fade-out var(--op-t-2) var(--op-ease-in) both; }
 
 /* El wrapper de la animación es TAMBIÉN el que centra, y esto no es un capricho
    de estilo: es la única forma de que no se rompa.
@@ -165,18 +185,22 @@
    alto y el modal terminaba medio cuerpo arriba del borde de la ventana.
 
    Centrando con grid no hay porcentajes que resolver contra nada. */
-.ox-modal__anim {
+.op-modal__anim {
   position: fixed;
   inset: 0;
   display: grid;
   place-items: center;
-  animation: ox-lift-in var(--ox-t-3) var(--ox-ease) both;
+  animation: op-lift-in var(--op-t-3) var(--op-ease) both;
 }
+/* El que esperaba su turno entra sobre el mismo velo cuando el anterior ya va
+   por la mitad de su salida: relevo, no dos modales encimados. Va antes que
+   la regla de salida, que le gana con su propio delay en 0. */
+.op-modal__anim.is-after { animation-delay: 90ms; }
 /* El wrapper cubre toda la ventana, así que tiene que dejar pasar el click al
    scrim de abajo; solo el modal en sí lo intercepta. */
-#ox-layer > .ox-modal__anim { pointer-events: none; }
+#op-layer > .op-modal__anim { pointer-events: none; }
 
-.ox-modal {
+.op-modal {
   position: relative;
   pointer-events: auto;
   width: min(520px, calc(100vw - 96px));
@@ -184,73 +208,78 @@
   display: flex;
   flex-direction: column;
   margin: 0;
-  border-radius: var(--ox-r-xl);
-  --ox-surface: var(--ox-s3);
-  background: var(--ox-surface);
-  box-shadow: var(--ox-hairline), var(--ox-e4);
+  border-radius: var(--op-r-xl);
+  background: var(--op-s3);
+  backdrop-filter: var(--op-glass-heavy);
+  box-shadow: var(--op-sheet), var(--op-e4);
   overflow: hidden;
 }
-/* Un modal que pisa a otro (o abre mientras el anterior sale): las dos cajas
-   hacen un relevo y no se cruzan en el centro. La nueva espera su turno y
-   asoma cuando la vieja ya va por un tercio; la vieja sale en in-out, porque
-   hay alguien esperando detrás (motion-timing, regla 2). La espera va antes
-   de la salida: si la nueva se cierra, su salida no hereda el retardo. */
-.ox-modal__anim.is-after { animation-delay: 90ms; }
-.ox-modal__anim[data-state='closing'] { animation: ox-lift-out var(--ox-t-2) var(--ox-ease-in) both; }
-.ox-modal__anim--pisada[data-state='closing'] { animation: ox-lift-out 160ms var(--ox-ease-both) both; }
-.ox-modal__head { padding: var(--ox-5) var(--ox-5) var(--ox-3); display: flex; align-items: flex-start; gap: var(--ox-3); }
-.ox-modal__title { font-size: var(--ox-fs-15); font-weight: var(--ox-w-semi); letter-spacing: var(--ox-track-tight); }
-.ox-modal__sub { font-size: var(--ox-fs-12); color: var(--ox-text-3); margin-top: 4px; line-height: var(--ox-lh-loose); }
-.ox-modal__body { padding: 0 var(--ox-5) var(--ox-5); overflow-y: auto; min-height: 0; }
-.ox-modal__foot {
+.op-modal__anim[data-state='closing'] { animation: op-lift-out var(--op-t-2) var(--op-ease-in) both; }
+/* Con otro esperando, la salida baja pareja: en ease-in caía de golpe al final, encima del que entra. */
+.op-modal__anim.is-relayed[data-state='closing'] { animation-timing-function: var(--op-ease-both); }
+/* Modal.show({ arm }): mientras se arma, sus botones no toman clicks (no se
+   ve nada distinto), y el foco está en el diálogo mismo, que no lleva el
+   anillo genérico: le cambiaría el radio y lo dibujaría por fuera del vidrio. */
+.op-modal__anim.is-arming .op-modal__foot .op-btn { pointer-events: none; }
+.op-modal:focus-visible { outline: none; border-radius: var(--op-r-xl); }
+.op-modal__head { padding: var(--op-5) var(--op-5) var(--op-3); display: flex; align-items: flex-start; gap: var(--op-3); }
+.op-modal__title { font-size: var(--op-fs-15); font-weight: var(--op-w-semi); letter-spacing: var(--op-track-tight); }
+.op-modal__sub { font-size: var(--op-fs-12); color: var(--op-text-3); margin-top: 4px; line-height: var(--op-lh-loose); }
+.op-modal__body { padding: 0 var(--op-5) var(--op-5); overflow-y: auto; min-height: 0; }
+/* El pie es la base de la hoja: se hunde apenas, no sube. */
+.op-modal__foot {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--ox-2);
-  padding: var(--ox-3) var(--ox-5);
-  background: var(--ox-s2);
-  box-shadow: inset 0 1px 0 var(--ox-line);
+  gap: var(--op-2);
+  padding: var(--op-3) var(--op-5);
+  background: var(--op-foot);
+  box-shadow: inset 0 1px 0 var(--op-line);
 }
 
 /* ── Toasts ──────────────────────────────────────────────────────────────── */
-.ox-toasts {
+/* Dónde caen lo pone el shell (shell.js → --op-toasts-right/-bottom): sobre la
+   esquina de la hoja de la vista, adentro de su aire, y arriba del compositor
+   si está prendido. Los valores de acá son para una app sin shell.js. */
+.op-toasts {
   position: absolute;
-  right: var(--ox-5);
-  bottom: calc(var(--ox-statusbar) + var(--ox-4));
+  right: var(--op-toasts-right, var(--op-5));
+  bottom: var(--op-toasts-bottom, calc(var(--op-statusbar) + var(--op-4)));
   display: flex;
   flex-direction: column-reverse;
-  gap: var(--ox-2);
+  gap: var(--op-2);
   width: 320px;
 }
-.ox-toast {
+.op-toast {
   display: flex;
   align-items: flex-start;
-  gap: var(--ox-3);
-  padding: var(--ox-3);
-  border-radius: var(--ox-r-md);
-  background: var(--ox-s3);
-  box-shadow: var(--ox-hairline), var(--ox-e4);
-  animation: ox-slide-in-r var(--ox-t-3) var(--ox-ease) both;
+  gap: var(--op-3);
+  padding: var(--op-3);
+  border-radius: var(--op-r-lg);
+  background: var(--op-flota-toast);   /* del tono de las tarjetas: ver tokens.css */
+  backdrop-filter: var(--op-glass);
+  box-shadow: var(--op-sheet), var(--op-e4);
+  animation: op-slide-in-r var(--op-t-3) var(--op-ease) both;
   overflow: hidden;
   position: relative;
 }
-.ox-toast[data-state='closing'] { animation: ox-slide-out-r var(--ox-t-2) var(--ox-ease-in) both; }
-.ox-toast > .ox-icon { color: var(--ox-text-3); margin-top: 1px; }
-.ox-toast__main { flex: 1 1 auto; min-width: 0; }
-.ox-toast__title { font-size: var(--ox-fs-12); font-weight: var(--ox-w-medium); color: var(--ox-text); }
-.ox-toast__text { font-size: var(--ox-fs-11); color: var(--ox-text-3); margin-top: 2px; line-height: var(--ox-lh); user-select: text; }
-.ox-toast__action { margin-top: 8px; }
-.ox-toast--error > .ox-icon { color: var(--ox-danger); }
-.ox-toast--error { box-shadow: inset 0 0 0 1px var(--ox-danger-ring), var(--ox-e4); }
+.op-toast[data-state='closing'] { animation: op-slide-out-r var(--op-t-2) var(--op-ease-in) both; }
+.op-toast > .op-icon { color: var(--op-text-3); margin-top: 1px; }
+.op-toast__main { flex: 1 1 auto; min-width: 0; }
+.op-toast__title { font-size: var(--op-fs-12); font-weight: var(--op-w-medium); color: var(--op-text); }
+.op-toast__text { font-size: var(--op-fs-11); color: var(--op-text-3); margin-top: 2px; line-height: var(--op-lh); user-select: text; }
+.op-toast__action { margin-top: 8px; }   /* Toast.show({ action }), traído de Onyx */
+.op-toast--error > .op-icon { color: var(--op-danger); }
+.op-toast--error { box-shadow: inset 0 1px 0 var(--op-edge-lit), inset 0 0 0 1px var(--op-danger-ring), var(--op-e4); }
 /* La barra de vida: se consume sola y muestra cuánto le queda. */
-.ox-toast__life {
+.op-toast__life {
   position: absolute;
   left: 0; bottom: 0;
   height: 1.5px;
   width: 100%;
-  background: var(--ox-line-3);
+  background: var(--op-line-3);
   transform-origin: left;
-  animation: ox-toast-life var(--life, 4000ms) linear forwards;
+  animation: op-toast-life var(--life, 4000ms) linear forwards;
 }
-.ox-toast--error .ox-toast__life { background: var(--ox-danger-ring); }
-@keyframes ox-toast-life { from { transform: scaleX(1) } to { transform: scaleX(0) } }
+.op-toast--error .op-toast__life { background: var(--op-danger-ring); }
+@keyframes op-toast-life { from { transform: scaleX(1) } to { transform: scaleX(0) } }

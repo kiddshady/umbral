@@ -3,7 +3,8 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    UMBRAL — proceso principal
    La puerta entre el teléfono y la UCX: servidor LAN, lo que llega del celu,
-   bandeja para el celu, tray y auto-update. La ventana es la de Onyx.
+   bandeja para el celu, el Notepad, tray y auto-update. La ventana es la de
+   Opal (desde la 0.13; hasta la 0.12 fue la de Onyx).
 
    ── La ventana sin un solo frame blanco ────────────────────────────────────
    Hay dos destellos blancos distintos y se arreglan distinto:
@@ -39,13 +40,13 @@ const QRCode = require('qrcode');
 const { createUmbralServer } = require('./server');
 const { createOutbox } = require('./outbox');
 const { createPairing } = require('./pairing');
-const { createBorrador } = require('./borrador');
+const { createNotepad, migrate: migrateNotepad } = require('./notepad');
 const updater = require('./updater');
 
-/* Color base de arranque. Tiene que coincidir con --ox-bg de tokens.css (lo
+/* Color base de arranque. Tiene que coincidir con --op-bg de tokens.css (lo
    sincroniza `node tools/retint.mjs` y lo vigila `npm test`). El renderer se
    lo vuelve a mandar ya resuelto apenas carga (win:set-bg). */
-const BG = '#0b0a0f';
+const BG = '#0a0a0a';
 
 const BASE_PORT = Number(process.env.UMBRAL_PORT) || 4747;
 
@@ -81,6 +82,7 @@ else if (!app.isPackaged) app.setPath('userData', path.join(__dirname, '.devdata
 // Los ajustes y el estado de la ventana: dev → data/, empaquetada → userData.
 const store = require('./src/store.cjs');
 const ipc = require('./src/ipc.cjs');
+const { keepAlive } = require('./src/recover.cjs');
 
 // Inbox y outbox: en desarrollo van junto al proyecto (el sandbox de Claude
 // virtualiza las escrituras a AppData en un overlay que Explorer no ve;
@@ -90,11 +92,36 @@ const dataDir = process.env.UMBRAL_DATA || (app.isPackaged ? app.getPath('userDa
 const inboxDir = path.join(dataDir, 'inbox');
 const outbox = createOutbox(path.join(dataDir, 'outbox'));
 
-// El Borrador: un borrador.txt junto al inbox. Lo que cambia el celu o un
-// editor de afuera se le avisa al renderer; lo que escribe la PC ya lo tiene.
-const borrador = createBorrador(path.join(dataDir, 'borrador.txt'), {
-  onChange: (estado, desde) => { if (desde !== 'pc') sendWin('borrador:changed', { ...estado, desde }); },
-});
+// El Notepad: un notepad.txt junto al inbox (hasta la 0.12, borrador.txt; se
+// renombra al arrancar). Lo que cambia el celu, CC o un editor de afuera se le
+// avisa al renderer; lo que escribe la PC ya lo tiene. Nace en el arranque,
+// después de la migración.
+let notepad = null;
+
+/* Las notas del mod viejo de la terminal (S:\tools\Notepad\notas.md) pasan una
+   sola vez al final del Notepad: desde la 0.13 el Notepad de Fran y CC es
+   este. Solo la instalada, que es la que usa Fran; el ajuste lo recuerda. */
+const NOTAS_VIEJAS = 'S:\\tools\\Notepad\\notas.md';
+async function traerNotasViejas() {
+  if (!app.isPackaged || SMOKE) return;
+  const settings = await store.loadSettings().catch(() => ({}));
+  if (settings.notasMigradas) return;
+  const viejas = (await fsp.readFile(NOTAS_VIEJAS, 'utf8').catch(() => '')).replace(/\r\n?/g, '\n').trim();
+  if (viejas) {
+    const { text } = notepad.get();
+    if (!text.includes(viejas)) notepad.set(text.trim() ? `${text.replace(/\n+$/, '')}\n\n${viejas}` : viejas, { desde: 'archivo' });
+    await notepad.flush();
+  }
+  await store.updateSettings((s) => ({ ...s, notasMigradas: true })).catch(() => {});
+}
+
+/* `Umbral.exe --notepad` (lo que corre /notepad, el comando del mod) abre la
+   ventana en el Notepad. Si llega antes de que el renderer esté listo, espera. */
+let pendingNotepad = process.argv.includes('--notepad');
+function irAlNotepad() {
+  if (rendererReady) sendWin('ir:notepad');
+  else pendingNotepad = true;
+}
 
 // Archivos que llegan por línea de comandos ("Enviar a → Umbral") antes de
 // que el renderer esté listo para recibirlos.
@@ -107,6 +134,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', (_e, argv) => {
     showMain();
+    if (argv.includes('--notepad')) irAlNotepad();
     queueArgFiles(argv.slice(1));
   });
 }
@@ -290,6 +318,17 @@ function saveWindowState() {
   }, 400);
 }
 
+// Lo que el debounce tenía pendiente, al disco YA y sin soltar el hilo.
+function flushPending() {
+  notepad?.close();
+  if (!saveTimer || !mainWindow || mainWindow.isDestroyed()) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  const b = mainWindow.getNormalBounds();
+  try { winState.writeSync({ x: b.x, y: b.y, width: b.width, height: b.height, maximized: mainWindow.isMaximized() }); }
+  catch (err) { console.error('[window] no se pudo guardar el estado:', err.message); }
+}
+
 /* El show() fuera de pantalla y, 200 ms después, a su lugar. Arrancando
    oculta no pasa en ready-to-show sino la primera vez que se la llama. */
 let placed = false;
@@ -334,6 +373,10 @@ function createWindow(state) {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  // Si se cae el proceso de la interfaz, la ventana se recarga sola (recover.cjs).
+  // El renderer recargado vuelve a avisar que está listo: hasta entonces, lo
+  // que llegue espera.
+  keepAlive(mainWindow, { onGone: () => { rendererReady = false; } });
 
   mainWindow.once('ready-to-show', () => {
     if (SMOKE) return mainWindow.show();   // el humo la quiere fuera de pantalla
@@ -357,6 +400,11 @@ function createWindow(state) {
   mainWindow.on('unmaximize', () => { sendWin('win:maximized', false); saveWindowState(); });
   mainWindow.on('resize', saveWindowState);
   mainWindow.on('move', saveWindowState);
+  /* Apagar, reiniciar o cerrar la sesión de Windows no pasa por Salir:
+     Windows avisa y después puede cortar. Lo pendiente del Notepad y de la
+     ventana va al disco ahí mismo, sin esperar. */
+  mainWindow.on('query-session-end', flushPending);
+  mainWindow.on('session-end', flushPending);
 
   // Nada de navegación fuera de la app; los links externos van al navegador.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -555,7 +603,7 @@ const qrDataUrl = () =>
   QRCode.toDataURL(`${serverInfo.url}/#k=${pairing.llave()}`, {
     margin: 1,
     width: 220,
-    color: { dark: '#16131f', light: '#f2f0fa' }, // clásico oscuro-sobre-claro: escanea siempre
+    color: { dark: '#0d0d0e', light: '#ededed' }, // clásico oscuro-sobre-claro: escanea siempre
   });
 
 ipcMain.handle('server:qr', () => qrDataUrl());
@@ -568,11 +616,11 @@ ipcMain.handle('pair:revoke', async () => { await pairing.revoke(); return qrDat
 
 ipcMain.handle('inbox:open', async (_e, which) => {
   // explorer.exe directo: shell.openPath falla silencioso en algunos contextos
-  if (which === 'borrador') {
+  if (which === 'notepad') {
     // La carpeta con el .txt ya marcado. Si todavía no existe, se crea vacío.
-    await borrador.flush();
-    if (!fs.existsSync(borrador.file)) await fsp.writeFile(borrador.file, '', 'utf8').catch(() => {});
-    spawn('explorer.exe', [`/select,${borrador.file}`], { detached: true, stdio: 'ignore' }).unref();
+    await notepad.flush();
+    if (!fs.existsSync(notepad.file)) await fsp.writeFile(notepad.file, '', 'utf8').catch(() => {});
+    spawn('explorer.exe', [`/select,${notepad.file}`], { detached: true, stdio: 'ignore' }).unref();
     return;
   }
   const dir = which === 'outbox' ? path.join(dataDir, 'outbox') : inboxDir;
@@ -636,10 +684,10 @@ ipcMain.handle('outbox:paste', async () => {
   return { ok: true, items: [outMeta(m)] };
 });
 
-ipcMain.handle('borrador:get', () => borrador.get());
-ipcMain.handle('borrador:set', (_e, text) => borrador.set(text, { desde: 'pc' }));
+ipcMain.handle('notepad:get', () => notepad.get());
+ipcMain.handle('notepad:set', (_e, text) => notepad.set(text, { desde: 'pc' }));
 
-// El Borrador copia texto plano: lo que se pegue después sale tal cual.
+// El Notepad copia texto plano: lo que se pegue después sale tal cual.
 ipcMain.handle('texto:copy', async (_e, text) => {
   // El humo no le pisa el portapapeles a Fran: anota qué se habría copiado.
   if (SMOKE) { global.__umbralCopiado = String(text ?? ''); return true; }
@@ -649,6 +697,7 @@ ipcMain.handle('texto:copy', async (_e, text) => {
 
 ipcMain.on('renderer:ready', () => {
   rendererReady = true;
+  if (pendingNotepad) { pendingNotepad = false; sendWin('ir:notepad'); }
   if (pendingArgs.length) {
     const files = pendingArgs;
     pendingArgs = [];
@@ -672,7 +721,7 @@ ipcMain.on('win:toggle-maximize', () => {
 ipcMain.on('win:close', () => mainWindow?.close());
 ipcMain.handle('win:is-maximized', () => (mainWindow ? mainWindow.isMaximized() : false));
 
-// El renderer manda su --ox-bg ya resuelto a hex: el frame fantasma del
+// El renderer manda su --op-bg ya resuelto a hex: el frame fantasma del
 // restore sigue camuflado aunque cambie el matiz en tokens.css.
 ipcMain.on('win:set-bg', (_e, hex) => {
   if (mainWindow && !mainWindow.isDestroyed() && /^#[0-9a-f]{6}$/i.test(String(hex))) {
@@ -691,7 +740,11 @@ app.whenReady().then(async () => {
   // En el humo, argv trae el archivo del test: no es un «Enviar a».
   if (!SMOKE) pendingArgs.push(...argFiles(process.argv.slice(1)));
 
-  await borrador.load();
+  notepad = createNotepad(await migrateNotepad(dataDir), {
+    onChange: (estado, desde) => { if (desde !== 'pc') sendWin('notepad:changed', { ...estado, desde }); },
+  });
+  await notepad.load();
+  await traerNotasViejas();
   const vinculo = store.doc('vinculo', null);
   pairing = await createPairing({
     load: async () => (await vinculo.read())?.llave || null,
@@ -711,7 +764,7 @@ app.whenReady().then(async () => {
     onDelivered: (m) => sendWin('outbox:delivered', outMeta(m)),
     pairing,
     onPaired: (d) => sendWin('pair:done', d),
-    borrador,
+    notepad,
   });
   const ip = lanIp();
   serverInfo = { ip, port, url: `http://${ip}:${port}` };
@@ -731,7 +784,7 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
-  borrador.close();   // lo que estaba por guardarse se escribe ya
+  notepad?.close();   // lo que estaba por guardarse se escribe ya
 });
 
 app.on('window-all-closed', () => {

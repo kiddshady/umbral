@@ -18,7 +18,7 @@ const require = createRequire(import.meta.url);
 let pass = 0; let fail = 0;
 const ok = (n, c, x = '') => { if (c) { pass++; console.log(`  ok   ${n}`); } else { fail++; console.log(`  FALLA ${n} ${x}`); } };
 
-const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'onyx-store-'));
+const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'umbral-store-'));
 process.env.UMBRAL_DATA = DIR;
 const store = require('../src/store.cjs');
 
@@ -66,12 +66,12 @@ ok('y aparta el archivo ilegible en vez de perderlo',
 console.log('\n4. Ajustes');
 const base = await store.loadSettings();
 ok('el primer arranque escribe los defaults', base.schema === store.SCHEMA && fs.existsSync(store.SETTINGS_FILE));
-const parche = await store.saveSettings({ otra: 'amplia' });
-ok('guardar un parche no pisa el resto', parche.otra === 'amplia' && parche.miniatura === store.DEFAULT_SETTINGS.miniatura);
+const parche = await store.saveSettings({ densidad: 'amplia' });
+ok('guardar un parche no pisa el resto', parche.densidad === 'amplia' && parche.autoGuardado === store.DEFAULT_SETTINGS.autoGuardado);
 // Una clave nueva del código tiene que aparecer en un archivo viejo.
-await store.writeJSON(store.SETTINGS_FILE, { schema: store.SCHEMA, otra: 'compacta' });
+await store.writeJSON(store.SETTINGS_FILE, { schema: store.SCHEMA, densidad: 'compacta' });
 const completado = await store.loadSettings();
-ok('las claves nuevas se completan solas', 'miniatura' in completado && completado.otra === 'compacta');
+ok('las claves nuevas se completan solas', 'autoGuardado' in completado && completado.densidad === 'compacta');
 
 console.log('\n5. Colección');
 const col = store.collection('items');
@@ -95,6 +95,72 @@ for (const malo of ['../fuera', 'a/b', '..\\..\\x', '', 'con espacio', '.oculto'
   try { store.assertId(malo); } catch { tiro = true; }
   ok(`rechaza ${JSON.stringify(malo)}`, tiro);
 }
+
+console.log('\n7. Lo que se aparta queda anotado, para avisar');
+fs.writeFileSync(path.join(DIR, 'roto2.json'), '{ "a": ');
+const d2 = store.doc('roto2');
+ok('antes de leer, nada apartado', d2.aside === null);
+await d2.read();
+ok('el documento sabe adónde fue a parar', /roto2\.json\.corrupto-\d+$/.test(d2.aside || '') && fs.existsSync(d2.aside), String(d2.aside));
+ok('y la lista de la corrida lo tiene', store.asides().some((a) => a.file.endsWith('roto2.json')));
+
+console.log('\n8. Escritura sincrónica (el apagado de Windows)');
+const sf = path.join(DIR, 'apagado.json');
+store.writeJSONSync(sf, { n: 1 });
+ok('vuelve con el archivo ya en el disco', JSON.parse(fs.readFileSync(sf, 'utf8')).n === 1);
+const vieja = store.writeJSON(sf, { n: 'vieja' });   // encolada ANTES de la sincrónica
+store.writeJSONSync(sf, { n: 2 });
+await vieja;
+ok('una asíncrona encolada antes no la pisa después', JSON.parse(fs.readFileSync(sf, 'utf8')).n === 2, fs.readFileSync(sf, 'utf8'));
+await store.writeJSON(sf, { n: 3 });
+ok('las que se encolan después escriben normal', JSON.parse(fs.readFileSync(sf, 'utf8')).n === 3);
+ok('sin temporales tirados', !fs.readdirSync(DIR).some((f) => f.includes('.tmp')));
+
+console.log('\n9. Un archivo tomado al leer no es un archivo vacío');
+if (process.platform === 'win32') {
+  const { spawn } = await import('child_process');
+  const tomado = path.join(DIR, 'tomado.json');
+  fs.writeFileSync(tomado, JSON.stringify({ v: 1 }));
+  // Otro programa lo abre sin compartir nada (lo que hace un backup o un antivirus).
+  const hold = (ms) => new Promise((resolve) => {
+    const ps = spawn('powershell', ['-NoProfile', '-Command', `$f = [IO.File]::Open('${tomado}', 'Open', 'ReadWrite', 'None'); 'listo'; Start-Sleep -Milliseconds ${ms}; $f.Close()`]);
+    ps.stdout.once('data', () => resolve(ps));
+  });
+  const exited = (ps) => new Promise((r) => (ps.exitCode !== null ? r() : ps.on('exit', r)));
+  let ps = await hold(200);
+  const leido = await store.readJSON(tomado, null).catch((e) => e);
+  ok('si se suelta enseguida, el reintento lo lee', leido?.v === 1, leido?.code || JSON.stringify(leido));
+  await exited(ps);
+  ps = await hold(4000);
+  const err = await store.readJSON(tomado, null).then((v) => v, (e) => e);
+  ok('si sigue tomado, el error sube (no es "no hay nada")', ['EBUSY', 'EPERM', 'EACCES'].includes(err?.code), String(err?.code ?? JSON.stringify(err)));
+  ps.kill();
+  await exited(ps);
+} else {
+  console.log('  (solo en Windows)');
+}
+
+console.log('\n10. Dos guardados de ajustes a la vez');
+/* Guardar es leer, mezclar y escribir. Sin la fila, los dos leían el mismo
+   archivo viejo y el segundo escribía encima sin el cambio del primero. */
+await store.saveSettings({ autoGuardado: true, densidad: 'comoda' });
+await Promise.all([store.saveSettings({ autoGuardado: false }), store.saveSettings({ densidad: 'compacta' })]);
+const juntos = await store.loadSettings();
+ok('los dos cambios quedan', juntos.autoGuardado === false && juntos.densidad === 'compacta', JSON.stringify(juntos));
+await Promise.all(Array.from({ length: 10 }, (_, i) => store.saveSettings({ [`k${i}`]: i })));
+const diez = await store.loadSettings();
+ok('diez a la vez, ninguno se pierde', Array.from({ length: 10 }, (_, i) => diez[`k${i}`] === i).every(Boolean), JSON.stringify(diez));
+// updateSettings ve lo que dejó el anterior, aunque se haya pedido antes de que llegue.
+await store.saveSettings({ lista: [] });
+await Promise.all(['a', 'b', 'c'].map((x) => store.updateSettings((cur) => ({ lista: [...cur.lista, x] }))));
+const enFila = JSON.stringify((await store.loadSettings()).lista);
+ok('updateSettings parte de lo último guardado', enFila === '["a","b","c"]', enFila);
+const antes = fs.statSync(store.SETTINGS_FILE).mtimeMs;
+await store.updateSettings(() => null);
+ok('sin parche, el archivo no se toca', fs.statSync(store.SETTINGS_FILE).mtimeMs === antes);
+// Un guardado que falla no traba la fila: los que vienen siguen andando.
+await store.updateSettings(() => { throw new Error('a propósito'); }).catch(() => {});
+ok('una falla no traba a los que vienen', (await store.saveSettings({ densidad: 'amplia' })).densidad === 'amplia');
 
 fs.rmSync(DIR, { recursive: true, force: true });
 console.log(`\n═══ ${pass} ok · ${fail} fallas ═══`);

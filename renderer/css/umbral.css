@@ -1,105 +1,89 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    UMBRAL — lo propio de la app
-   Convive con las hojas `ox-` de Onyx y solo usa sus tokens: ningún valor
-   crudo de color. Prefijo `ub-`.
+   Convive con las hojas `op-` de Opal y solo usa sus tokens: ningún valor
+   crudo de color (salvo el papel del QR, que tiene que coincidir con el que
+   pinta main.cjs). Prefijo `ub-`.
+
+   La física es la de Opal: una sola superficie opaca (la ventana), hojas de
+   luz translúcida encima y pozos de sombra. Vidrio (backdrop-filter) solo en
+   lo que flota directo sobre algo que muestrear: los overlays de #op-layer.
+   Lo que vive adentro de la hoja de la vista (las tarjetas, la píldora, el
+   Notepad) es relleno sin blur. Y la ley del énfasis: nada se pinta de
+   acento; lo que importa es un pozo con el canto vivo.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── El chasis: sin rail ni statusbar ───────────────────────────────────────
-   Umbral navega con el segmentado de la barra. Sin statusbar abajo, el
-   scroll de la vista se esfuma al aire (no hay línea que lo cierre) y los
-   toasts bajan hasta el borde de la ventana. */
-.ub-app { grid-template-rows: var(--ox-titlebar) auto 1fr; }
-.ub-app .ox-body { grid-template-columns: 1fr; }
-/* motion.css clava la vista (y su calco del fundido) en la columna 2, la que
-   va al lado del rail. Sin rail, la columna 2 nacía implícita y la vista
-   quedaba en la mitad derecha de la ventana. */
-.ub-app .ox-body > .ox-main { grid-column: 1; }
-.ox-toasts { bottom: var(--ox-5); }
+/* ── El chasis ──────────────────────────────────────────────────────────────
+   El shell de Opal tal cual: rail, la vista como hoja y la statusbar de aire.
+   Umbral tiene tres vistas: el rail puede ser más angosto que el de fábrica. */
+.ub-app { --op-rail: 196px; }
 
-/* ── La barra ─────────────────────────────────────────────────────────────── */
-.ub-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--ox-3);
-  min-width: 0;
-  padding: var(--ox-3) var(--ox-6) var(--ox-2);
-  --ox-plegable-gap: var(--ox-3);
-}
-.ub-bar__sep { align-self: center; height: 18px; margin-inline: var(--ox-1); }
-.ub-bar__group { display: flex; align-items: center; gap: var(--ox-1); }
-/* El plegable recorta (overflow: clip) y el anillo de foco sale 3.5 px por
-   fuera: le deja ese aire adentro y lo devuelve con margen negativo. Al
-   plegarse, el padding de los costados va a 0 con el ancho. */
-.ub-bar__group.ox-plegable--ancho { padding-block: 4px; margin-block: -4px; }
-.ub-bar__group.ox-plegable--ancho:not([hidden]) { padding-inline: 4px; margin-inline: -4px; }
-@starting-style {
-  .ub-bar__group.ox-plegable--ancho:not([hidden]) { padding-inline: 0; margin-inline: 0 calc(-1 * var(--ox-plegable-gap)); }
-}
+/* Lo que flota tiene el tono de lo que tapa, y se MIDE (medir.cjs en el
+   scratchpad de la 0.13: promedio de 5×5 en un punto vacío de cada uno).
+   Las tarjetas de Umbral son fichas sobre la hoja de la vista: tarjeta 23.
+   Con las bases de Opal (75 / 20) el menú daba 27 y el toast 30; con estas,
+   24 y 25. En :root porque ahí se arma --op-flota (tokens.css). */
+:root { --op-flota-base: 95%; --op-flota-toast-base: 90%; }
 
-.ub-count {
-  margin-left: 2px;
-  font-family: var(--ox-mono);
-  font-size: var(--ox-fs-10);
-  font-variant-numeric: tabular-nums;
-  color: var(--ox-text-4);
-  transition: var(--tr-color);
-}
-.ox-segmented__opt.is-active .ub-count { color: var(--ox-text-3); }
-/* Algo esperando al celu: el número se enciende. */
+.ub-rail-foot { padding: var(--op-3); }
+.ub-vincular { width: 100%; justify-content: center; }
+.ub-vincular.is-open { background: var(--op-wash-2); color: var(--op-text); }
+
+/* Algo esperando al celu: el número del rail se enciende, con su aureola. */
+.op-navitem__count { font-family: var(--op-mono); font-variant-numeric: tabular-nums; }
+.op-navitem__count:empty { display: none; }
 .ub-count.is-hot,
-.ox-segmented__opt.is-active .ub-count.is-hot { color: var(--ox-accent); }
-
-.ub-server { display: flex; align-items: center; gap: var(--ox-2); min-width: 0; }
-.ub-addr {
-  padding: 3px var(--ox-2);
-  border-radius: var(--ox-r-sm);
-  background: var(--ox-sunken);
-  box-shadow: var(--ox-hairline);
-  font-size: var(--ox-fs-11);
-  color: var(--ox-text-2);
-  white-space: nowrap;
+.op-navitem:hover .ub-count.is-hot,
+.op-navitem.is-active .ub-count.is-hot {
+  color: var(--op-accent);
+  text-shadow: 0 0 8px rgb(var(--op-accent-rgb) / .45);
 }
-.ub-addr:empty { display: none; }
 
-.ub-size { display: flex; align-items: center; gap: var(--ox-2); color: var(--ox-text-4); }
-.ub-size .ox-slider { width: 120px; }
+/* La dirección del servidor, en la statusbar. */
+.ub-server { gap: var(--op-2); }
+.ub-server .op-mark { width: 9px; height: 9px; }
+#addr:empty { display: none; }
+
+/* ── El encabezado de cada vista: sus herramientas ─────────────────────────── */
+.ub-vr { align-self: center; height: 18px; margin-inline: var(--op-1); }
+.ub-size { display: flex; align-items: center; gap: var(--op-2); color: var(--op-text-4); }
+.ub-size .op-slider { width: 112px; }
+.ub-size .op-icon { width: 13px; height: 13px; }
 
 /* La purga es el botón que no tiene vuelta atrás: se enciende en rojo recién
    cuando el mouse está encima, no antes. */
-.ub-nuke:hover:not(:disabled) { color: var(--ox-danger); background: var(--ox-danger-wash); }
+.ub-nuke:hover:not(:disabled) { color: var(--op-danger); background: var(--op-danger-wash); }
 
 /* ── La galería ───────────────────────────────────────────────────────────── */
 .ub-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--ub-thumb, 220px), 1fr));
   align-items: start;
-  gap: var(--ox-4);
-  padding-bottom: var(--ox-4);
+  gap: var(--op-4);
+  padding-block: var(--op-1) var(--op-5);
 }
 
+/* Una tarjeta es una hoja más de luz sobre la de la vista: junta luz encima,
+   sin blur propio (vive adentro del scroller, donde el vidrio queda ciego). */
 .ub-card {
   position: relative;
   margin: 0;
-  border-radius: var(--ox-r-md);
+  border-radius: var(--op-r-md);
   overflow: hidden;
-  background: var(--ox-s2);
-  --ox-surface: var(--ox-s2);
-  box-shadow: var(--ox-hairline), var(--ox-e1);
+  background: var(--op-s2);
+  box-shadow: var(--op-sheet), var(--op-e1);
   cursor: zoom-in;
-  transition: transform var(--ox-t-2) var(--ox-ease), box-shadow var(--ox-t-2) var(--ox-ease);
+  transition: transform var(--op-t-2) var(--op-ease), box-shadow var(--op-t-2) var(--op-ease);
 }
 .ub-card:hover {
   transform: translateY(-2px);
-  box-shadow: inset 0 0 0 1px var(--ox-wash-3), var(--ox-e3);
+  box-shadow: inset 0 1px 0 var(--op-edge-lit), inset 0 0 0 1px var(--op-line-2), var(--op-e3);
 }
-/* El hover le pisaría el anillo de foco de base.css: lo declara de nuevo. */
-.ub-card:focus-visible { box-shadow: 0 0 0 2px var(--ox-bg), 0 0 0 3.5px var(--ox-ring), var(--ox-e1); }
 .ub-card img { display: block; width: 100%; height: auto; -webkit-user-drag: none; }
 
-/* Al arrancar las tarjetas entran escalonadas (stagger le pone --i). Una
+/* Al arrancar las tarjetas afloran escalonadas (stagger le pone --i). Una
    tarjeta nueva no la usa: de entrar se encarga reconcile(). */
 .ub-grid--entra > .ub-card {
-  animation: ox-rise-in var(--ox-t-3) var(--ox-ease) both;
+  animation: op-rise-in var(--op-t-3) var(--op-ease) both;
   animation-delay: calc(min(var(--i, 0), 20) * 24ms);
 }
 
@@ -108,96 +92,100 @@
   left: 0;
   right: 0;
   bottom: 0;
-  padding: var(--ox-5) var(--ox-3) var(--ox-2);
-  font-family: var(--ox-mono);
-  font-size: var(--ox-fs-10);
-  color: var(--ox-text-2);
-  background: linear-gradient(to top, color-mix(in oklab, var(--ox-sunken) 88%, transparent), transparent);
+  padding: var(--op-5) var(--op-3) var(--op-2);
+  font-family: var(--op-mono);
+  font-size: var(--op-fs-10);
+  color: var(--op-text-2);
+  background: linear-gradient(to top, color-mix(in oklab, var(--op-bg) 86%, transparent), transparent);
   opacity: 0;
   transform: translateY(4px);
-  transition: opacity var(--ox-t-2) var(--ox-ease), transform var(--ox-t-2) var(--ox-ease);
+  transition: opacity var(--op-t-2) var(--op-ease), transform var(--op-t-2) var(--op-ease);
   pointer-events: none;
 }
 .ub-card:is(:hover, :focus-visible) .ub-card__time { opacity: 1; transform: none; }
 
-/* Lo que no es imagen es una ficha (en las dos vistas desde la 0.5; un click
-   la abre con su programa). En Para el celu, lo que ya bajó se apaga. */
+/* Lo que no es imagen es una ficha (un click la abre con su programa). En
+   Para el celu, lo que ya bajó se apaga. */
 .ub-card--file { cursor: pointer; }
 .ub-card img,
-.ub-file { transition: filter var(--ox-t-3) var(--ox-ease); }
+.ub-file { transition: filter var(--op-t-3) var(--op-ease); }
 .ub-card.is-delivered img { filter: saturate(.5) brightness(.7); }
 .ub-card.is-delivered .ub-file { filter: brightness(.75); }
 
+/* La cara de la ficha es un pozo dentro de la tarjeta. */
 .ub-file {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--ox-2);
+  gap: var(--op-2);
   aspect-ratio: 4 / 3;
-  padding: var(--ox-4);
-  color: var(--ox-text-4);
-  background: var(--ox-s3);
+  padding: var(--op-4);
+  color: var(--op-text-4);
+  background: var(--op-sunken);
 }
-.ub-file > .ox-icon { width: 30px; height: 30px; stroke-width: 1.1; }
+.ub-file > .op-icon { width: 30px; height: 30px; stroke-width: 1.1; }
 .ub-file__ext {
-  font-family: var(--ox-mono);
-  font-size: var(--ox-fs-10);
-  letter-spacing: var(--ox-track-caps);
-  color: var(--ox-text-3);
+  font-family: var(--op-mono);
+  font-size: var(--op-fs-10);
+  letter-spacing: var(--op-track-caps);
+  color: var(--op-text-3);
 }
-.ub-file__name { max-width: 100%; font-size: var(--ox-fs-12); color: var(--ox-text); text-align: center; }
+.ub-file__name { max-width: 100%; font-size: var(--op-fs-12); color: var(--op-text); text-align: center; }
 
+/* La píldora de estado. Sin blur: adentro del scroller no muestrea. Un fondo
+   casi opaco hace que se lea sobre cualquier foto. */
 .ub-pill {
   position: absolute;
-  top: var(--ox-2);
-  right: var(--ox-2);
+  top: var(--op-2);
+  right: var(--op-2);
   display: flex;
   align-items: center;
-  gap: var(--ox-1);
+  gap: var(--op-1);
   height: 22px;
-  padding: 0 var(--ox-2) 0 6px;
-  border-radius: var(--ox-r-pill);
-  font-size: var(--ox-fs-11);
-  font-weight: var(--ox-w-medium);
-  color: var(--ox-text-2);
-  background: color-mix(in oklab, var(--ox-bg) 78%, transparent);
-  backdrop-filter: blur(4px);
-  box-shadow: var(--ox-hairline), var(--ox-e1);
-  transition: background var(--ox-t-3) var(--ox-ease), color var(--ox-t-3) var(--ox-ease);
+  padding: 0 var(--op-2) 0 6px;
+  border-radius: var(--op-r-pill);
+  font-size: var(--op-fs-11);
+  font-weight: var(--op-w-medium);
+  color: var(--op-text-2);
+  background: color-mix(in oklab, var(--op-bg) 84%, transparent);
+  box-shadow: inset 0 1px 0 var(--op-edge-lit), inset 0 0 0 1px var(--op-line), var(--op-e1);
+  transition: color var(--op-t-3) var(--op-ease), box-shadow var(--op-t-3) var(--op-ease);
 }
-.ub-pill .ox-mark { width: 12px; height: 12px; }
-.ub-pill .ox-icon { width: 12px; height: 12px; }
+.ub-pill .op-mark { width: 12px; height: 12px; }
+.ub-pill .op-icon { width: 12px; height: 12px; }
+/* Bajada: la píldora se talla, no se rellena: el canto vivo dice «llegó». */
 .ub-card.is-delivered .ub-pill {
-  color: var(--ox-accent);
-  background: color-mix(in oklab, var(--ox-bg) 70%, var(--ox-accent) 16%);
+  color: var(--op-text);
+  box-shadow: inset 0 1px 0 var(--op-edge-lit), inset 0 0 0 1px var(--op-rim), var(--op-e1);
 }
 
 /* El vacío lleva su marca grande y la dirección, que es lo que hay que tipear. */
-.ub-empty > .ox-icon { width: 72px; height: 72px; stroke-width: .8; color: var(--ox-s4); }
-.ub-empty .ox-empty__text { max-width: 380px; }
+.ub-empty > .op-icon { width: 72px; height: 72px; stroke-width: .8; color: var(--op-text-4); }
+.ub-empty .op-empty__text { max-width: 380px; }
 .ub-empty__addr {
-  margin-top: var(--ox-1);
-  padding: 4px var(--ox-3);
-  border-radius: var(--ox-r-sm);
-  font-family: var(--ox-mono);
-  font-size: var(--ox-fs-12);
-  color: var(--ox-accent);
-  background: var(--ox-wash-1);
-  box-shadow: inset 0 0 0 1px var(--ox-wash-2);
+  margin-top: var(--op-1);
+  padding: 4px var(--op-3);
+  border-radius: var(--op-r-sm);
+  font-family: var(--op-mono);
+  font-size: var(--op-fs-12);
+  color: var(--op-text);
+  background: var(--op-deep);
+  box-shadow: inset 0 0 0 1px var(--op-rim);
 }
 .ub-empty__inline { display: inline-flex; vertical-align: -2px; }
-.ub-empty__inline .ox-icon { width: 11px; height: 11px; }
-.ub-empty strong { font-weight: var(--ox-w-medium); color: var(--ox-text-3); }
+.ub-empty__inline .op-icon { width: 11px; height: 11px; }
+.ub-empty strong { font-weight: var(--op-w-medium); color: var(--op-text-2); }
 
-/* ── Overlays propios ─────────────────────────────────────────────────────── */
+/* ── Overlays propios ─────────────────────────────────────────────────────────
+   Flotan en #op-layer, directo sobre la ventana: ahí el vidrio sí muestrea.
+   Llevan la luz de una tarjeta sobre una base oscura (--op-flota) y entran y
+   salen solo por opacidad: con la hoja moviéndose, el canto de arriba dejaba
+   ver el desenfoque de atrás como una línea clara. */
 
-/* Un Modal.confirm no trae cuerpo, pero el de Onyx lo arma igual, con su
-   padding: quedaba una franja vacía de 40 px entre el texto y los botones. */
-.ox-modal__body:empty { display: none; }
-
-/* El ancla invisible del menú contextual: un punto en el cursor. */
-.ub-anchor { position: fixed; width: 0; height: 0; pointer-events: none; }
+/* Un Modal.confirm no trae cuerpo, pero el modal lo arma igual, con su
+   padding: quedaba una franja vacía entre el texto y los botones. */
+.op-modal__body:empty { display: none; }
 
 /* El visor. vw/vh y no %: dentro de un grid con pistas auto los porcentajes
    no resuelven y la imagen salía a tamaño natural (2400 px de teléfono). */
@@ -206,187 +194,208 @@
   inset: 0;
   display: grid;
   place-items: center;
-  background: color-mix(in oklab, var(--ox-sunken) 76%, transparent);
-  backdrop-filter: blur(6px);
+  background: color-mix(in oklab, var(--op-bg) 72%, transparent);
+  backdrop-filter: var(--op-glass);
   cursor: zoom-out;
-  animation: ox-fade-in var(--ox-t-3) var(--ox-ease) both;
+  animation: op-fade-in var(--op-t-3) var(--op-ease) both;
 }
 .ub-lightbox img {
   max-width: 92vw;
   max-height: 88vh;
-  border-radius: var(--ox-r-lg);
-  box-shadow: var(--ox-e4);
-  animation: ox-lift-in var(--ox-t-3) var(--ox-ease) both;
+  border-radius: var(--op-r-lg);
+  box-shadow: var(--op-e4);
+  animation: op-lift-in var(--op-t-3) var(--op-ease) both;
   -webkit-user-drag: none;
 }
-.ub-lightbox[data-state='closing'] { animation: ox-fade-out var(--ox-t-2) var(--ox-ease-in) both; }
-.ub-lightbox[data-state='closing'] img { animation: ox-lift-out var(--ox-t-2) var(--ox-ease-in) both; }
+.ub-lightbox[data-state='closing'] { animation: op-fade-out var(--op-t-out) var(--op-ease-in) both; }
+.ub-lightbox[data-state='closing'] img { animation: op-lift-out var(--op-t-out) var(--op-ease-in) both; }
 
-/* El QR, colgado del botón que lo abre. */
+/* El QR, colgado del botón del pie del rail: sube desde él. */
 .ub-qr {
   position: absolute;
   display: flex;
   flex-direction: column;
-  gap: var(--ox-3);
+  gap: var(--op-3);
   width: 232px;
-  padding: var(--ox-3);
-  border-radius: var(--ox-r-lg);
-  background: var(--ox-s3);
-  --ox-surface: var(--ox-s3);
-  box-shadow: var(--ox-hairline), var(--ox-e4);
-  transform-origin: top left;
-  animation: ox-pop-in var(--ox-t-2) var(--ox-ease) both;
+  padding: var(--op-3);
+  border-radius: var(--op-r-lg);
+  background: var(--op-flota);
+  backdrop-filter: var(--op-glass);
+  box-shadow: var(--op-sheet), var(--op-e4);
+  animation: op-fade-in var(--op-t-2) var(--op-ease) both;
 }
-.ub-qr[data-state='closing'] { animation: ox-pop-out 110ms var(--ox-ease-in) both; }
-/* Oscuro sobre claro: es lo único claro de la app, y es así porque escanea siempre. */
+.ub-qr[data-state='closing'] { animation: op-fade-out var(--op-t-out) var(--op-ease-in) both; }
+/* Oscuro sobre claro: es lo único claro de la app, y es así porque escanea
+   siempre. El papel es el `light` del QR que arma main.cjs. */
 .ub-qr__code {
   display: grid;
   place-items: center;
   aspect-ratio: 1;
-  padding: var(--ox-2);
-  border-radius: var(--ox-r-md);
-  background: #f2f0fa;
+  padding: var(--op-2);
+  border-radius: var(--op-r-md);
+  background: #ededed;
 }
 .ub-qr__code img { display: block; width: 100%; height: 100%; }
-.ub-qr__code:empty { background: var(--ox-sunken); }
-.ub-qr__text { font-size: var(--ox-fs-12); color: var(--ox-text-3); line-height: var(--ox-lh-loose); }
+.ub-qr__code:empty { background: var(--op-sunken); }
+.ub-qr__text { font-size: var(--op-fs-12); color: var(--op-text-3); line-height: var(--op-lh-loose); }
 /* La vinculación de la app del celu: debajo del QR, separada por una línea. */
 .ub-qr__pair {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--ox-2);
-  padding-top: var(--ox-3);
-  box-shadow: inset 0 1px 0 var(--ox-line);
+  gap: var(--op-2);
+  padding-top: var(--op-3);
+  box-shadow: inset 0 1px 0 var(--op-line);
 }
+/* El código es lo importante del cartel: un pozo con el canto vivo. */
 .ub-pair__code {
   align-self: stretch;
+  padding: var(--op-2) 0;
+  border-radius: var(--op-r-md);
   text-align: center;
-  font-size: var(--ox-fs-26);
+  font-size: var(--op-fs-26);
   letter-spacing: .14em;
-  color: var(--ox-text);
+  color: var(--op-text);
   font-variant-numeric: tabular-nums;
+  background: var(--op-deep);
+  box-shadow: inset 0 0 0 1px var(--op-rim);
 }
 .ub-pair__left { display: inline-block; font-variant-numeric: tabular-nums; }
 .ub-qr__forget { align-self: flex-start; }
 
-/* El velo de arrastrar archivos. */
+/* El velo de arrastrar archivos: cubre la hoja de la vista, con su canto vivo. */
 .ub-veil {
   position: fixed;
-  inset: calc(var(--ox-titlebar) + var(--ox-2)) var(--ox-4) var(--ox-4);
+  inset: calc(var(--op-titlebar) + var(--op-gutter)) var(--op-gutter) calc(var(--op-statusbar) + var(--op-gutter))
+         calc(var(--op-gutter) + var(--op-rail) + var(--op-gutter));
   display: grid;
   place-items: center;
-  border-radius: var(--ox-r-xl);
-  background: color-mix(in oklab, var(--ox-bg) 80%, transparent);
-  backdrop-filter: blur(6px);
-  box-shadow: inset 0 0 0 1.5px var(--ox-accent);
+  border-radius: var(--op-sheet-r);
+  background: color-mix(in oklab, var(--op-bg) 64%, transparent);
+  backdrop-filter: var(--op-glass);
+  box-shadow: inset 0 0 0 1px var(--op-rim-2), inset 0 0 40px rgb(var(--op-accent-rgb) / .05);
   pointer-events: none;
-  animation: ox-fade-in var(--ox-t-2) var(--ox-ease) both;
+  animation: op-fade-in var(--op-t-2) var(--op-ease) both;
 }
-#ox-layer > .ub-veil { pointer-events: none; }
-.ub-veil[data-state='closing'] { animation: ox-fade-out var(--ox-t-2) var(--ox-ease-in) both; }
+#op-layer > .ub-veil { pointer-events: none; }
+.ub-veil[data-state='closing'] { animation: op-fade-out var(--op-t-out) var(--op-ease-in) both; }
 .ub-veil__card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--ox-3);
-  color: var(--ox-accent);
-  animation: ox-pop-in var(--ox-t-3) var(--ox-ease) both;
+  gap: var(--op-3);
+  color: var(--op-accent);
+  animation: op-rise-in var(--op-t-3) var(--op-ease) both;
 }
-.ub-veil__card > .ox-icon { width: 40px; height: 40px; stroke-width: 1.1; }
-.ub-veil__title { font-size: var(--ox-fs-15); font-weight: var(--ox-w-medium); color: var(--ox-text); }
+.ub-veil__card > .op-icon { width: 40px; height: 40px; stroke-width: 1.1; filter: drop-shadow(0 0 10px rgb(var(--op-accent-rgb) / .35)); }
+.ub-veil__title { font-size: var(--op-fs-15); font-weight: var(--op-w-medium); color: var(--op-text); }
 
-/* La miniatura que reemplaza al ícono en el toast de «Captura recibida». */
+/* La miniatura que reemplaza al ícono en el toast de «Imagen recibida». */
 .ub-toast-thumb {
   flex: 0 0 auto;
   width: 28px;
   height: 28px;
   margin: -4px 0;
-  border-radius: var(--ox-r-xs);
+  border-radius: var(--op-r-xs);
   object-fit: cover;
-  box-shadow: var(--ox-hairline);
+  box-shadow: var(--op-hairline);
 }
 
-/* ── La tarjeta de actualización (abajo a la izquierda; los toasts van a la derecha) */
+/* ── La tarjeta de actualización ──────────────────────────────────────────────
+   Abajo a la izquierda de la hoja de la vista (los toasts van a la derecha),
+   a la altura de los toasts, que shell.js mide. */
 .ub-upd {
   position: absolute;
-  left: var(--ox-5);
-  bottom: var(--ox-5);
+  left: calc(var(--op-gutter) + var(--op-rail) + var(--op-gutter) + 16px);
+  bottom: var(--op-toasts-bottom, calc(var(--op-statusbar) + var(--op-4)));
   width: 300px;
-  padding: var(--ox-3);
-  border-radius: var(--ox-r-lg);
-  background: var(--ox-s3);
-  --ox-surface: var(--ox-s3);
-  box-shadow: var(--ox-hairline), var(--ox-e3);
-  animation: ox-rise-in var(--ox-t-3) var(--ox-ease) both;
+  padding: var(--op-3);
+  border-radius: var(--op-r-lg);
+  /* La base del menú, no la del toast: cae sobre las fotos de la galería, y
+     con poca base el vidrio quedaba lavado y la cruz se perdía. */
+  background: var(--op-flota);
+  backdrop-filter: var(--op-glass);
+  box-shadow: var(--op-sheet), var(--op-e3);
+  animation: op-fade-in var(--op-t-3) var(--op-ease) both;
 }
-.ub-upd[data-state='closing'] { animation: ox-rise-out var(--ox-t-2) var(--ox-ease-in) both; }
-.ub-upd__head { display: flex; align-items: flex-start; gap: var(--ox-3); }
+.ub-upd[data-state='closing'] { animation: op-fade-out var(--op-t-out) var(--op-ease-in) both; }
+.ub-upd__head { display: flex; align-items: flex-start; gap: var(--op-3); }
 .ub-upd__ico {
   display: grid;
   place-items: center;
   flex: none;
   width: 28px;
   height: 28px;
-  border-radius: var(--ox-r-md);
-  background: var(--ox-wash-1);
-  color: var(--ox-accent);
+  border-radius: var(--op-r-md);
+  background: var(--op-deep);
+  box-shadow: inset 0 0 0 1px var(--op-rim);
+  color: var(--op-text);
 }
-.ub-upd__ico.is-bad { background: var(--ox-danger-wash); color: var(--ox-danger); }
+.ub-upd__ico.is-bad { background: var(--op-danger-wash); box-shadow: inset 0 0 0 1px var(--op-danger-ring); color: var(--op-danger); }
 .ub-upd__txt { flex: 1; min-width: 0; padding-top: 1px; }
-.ub-upd__title { font-size: var(--ox-fs-13); font-weight: var(--ox-w-medium); color: var(--ox-text); }
-.ub-upd__sub { margin-top: 2px; font-size: var(--ox-fs-12); color: var(--ox-text-3); line-height: var(--ox-lh-loose); }
+.ub-upd__title { font-size: var(--op-fs-13); font-weight: var(--op-w-medium); color: var(--op-text); }
+.ub-upd__sub { margin-top: 2px; font-size: var(--op-fs-12); color: var(--op-text-3); line-height: var(--op-lh-loose); }
 .ub-upd__x { margin: -4px -4px 0 0; }
-.ub-upd .ox-meter { margin-top: var(--ox-3); }
-.ub-upd__acts { display: flex; justify-content: flex-end; gap: var(--ox-2); margin-top: var(--ox-3); }
+.ub-upd .op-meter { margin-top: var(--op-3); }
+.ub-upd__acts { display: flex; justify-content: flex-end; gap: var(--op-2); margin-top: var(--op-3); }
 
-/* ── El Borrador ──────────────────────────────────────────────────────────────
+/* ── El Notepad ───────────────────────────────────────────────────────────────
    Un campo que ocupa la vista entera y, abajo, el pie con el conteo y las dos
    acciones. No se estira a mano: ya llena el lugar. */
-.ub-borr {
-  --ub-borr-num: 2;     /* dígitos de la columna de números; los cambia el JS */
+.ub-note {
+  --ub-note-num: 2;     /* dígitos de la columna de números; los cambia el JS */
   position: relative;   /* el cursor de bloque y los números se ubican contra esta caja */
   display: flex;
   flex-direction: column;
-  gap: var(--ox-3);
+  gap: var(--op-3);
   min-height: 0;
-  padding-bottom: var(--ox-5);
+  padding-bottom: var(--op-5);
 }
-.ub-borr__text {
+/* El campo es un pozo dentro de la hoja: la atención baja hacia donde se
+   escribe. */
+.ub-note__text {
   flex: 1;
   min-height: 0;
   resize: none;
+  border-radius: var(--op-r-md);
   caret-color: transparent;   /* el cursor es el bloque de abajo */
   /* A la izquierda, lugar para los números: su margen, los dígitos y el aire
      hasta el texto. `ch` es el ancho de una letra de la mono. */
-  padding: var(--ox-3) var(--ox-4) var(--ox-3) calc(var(--ox-3) + var(--ub-borr-num) * 1ch + var(--ox-4));
-  font-size: var(--ub-borr-fs, 12px);   /* Ctrl + / Ctrl -; el alto de renglón la sigue */
+  padding: var(--op-3) var(--op-4) var(--op-3) calc(var(--op-3) + var(--ub-note-num) * 1ch + var(--op-4));
+  font-size: var(--ub-note-fs, 12px);   /* Ctrl + / Ctrl -; el alto de renglón la sigue */
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  transition: box-shadow var(--ox-t-2) var(--ox-ease-soft),
-              background-color var(--ox-t-2) var(--ox-ease-soft),
-              color var(--ox-t-2) var(--ox-ease-soft),
-              font-size var(--ox-t-1) var(--ox-ease-soft);
+  background: var(--op-sunken);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / .25), inset 0 0 0 1px var(--op-line);
+  transition: box-shadow var(--op-t-2) var(--op-ease-soft),
+              background-color var(--op-t-2) var(--op-ease-soft),
+              color var(--op-t-2) var(--op-ease-soft),
+              font-size var(--op-t-1) var(--op-ease-soft);
 }
-/* Con foco, el campo de Onyx pasa del hundido al fondo, un tono más claro: en
-   un campo que llena la vista se lee como que la pantalla se aclara. Acá el
-   fondo es siempre el hundido; el foco lo marca solo el canto. */
-.ub-borr__text:focus { background: var(--ox-sunken); }
+.ub-note__text:hover { box-shadow: inset 0 1px 2px rgb(0 0 0 / .25), inset 0 0 0 1px var(--op-line-2); }
+/* Con foco, el pozo de Opal se hunde más: en un campo que llena la vista se
+   lee como que la pantalla se oscurece. Acá el fondo es siempre el mismo; el
+   foco lo marca solo el canto, que se aviva. */
+.ub-note__text:focus {
+  background: var(--op-sunken);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / .25), inset 0 0 0 1px var(--op-line-3);
+}
 /* Limpiar: el texto se funde por color antes de vaciarse. */
-.ub-borr__text.is-limpiando { color: transparent; }
-.ub-borr__foot { display: flex; align-items: center; gap: var(--ox-2); min-height: 28px; }
-.ub-borr__info {
-  font-size: var(--ox-fs-11);
-  color: var(--ox-text-4);
+.ub-note__text.is-limpiando { color: transparent; }
+.ub-note__foot { display: flex; align-items: center; gap: var(--op-2); min-height: 28px; }
+.ub-note__info {
+  font-size: var(--op-fs-11);
+  color: var(--op-text-3);
   font-variant-numeric: tabular-nums;
 }
-/* Un cambio que vino del celu (o del .txt): el canto se enciende y se apaga. */
-.ub-borr__text.is-remoto { animation: ub-remoto 1.1s var(--ox-ease-soft); }
+/* Un cambio que vino de afuera (el celu, CC o el .txt): el canto se enciende
+   y se apaga. */
+.ub-note__text.is-remoto { animation: ub-remoto 1.1s var(--op-ease-soft); }
 @keyframes ub-remoto {
-  from { box-shadow: inset 0 0 0 1px var(--ox-accent), 0 0 0 3px var(--ox-wash-2); }
+  from { box-shadow: inset 0 1px 2px rgb(0 0 0 / .25), inset 0 0 0 1px var(--op-rim-2), 0 0 0 3px var(--op-wash-2); }
 }
-/* El cursor de bloque: el de NTX en el violeta de Umbral. El bloque es el
+/* El cursor de bloque: el de NTX, en la luz de Opal. El bloque es el
    ::before, más bajo que el renglón y centrado en él, y la letra va arriba en
    la tinta del acento. Parpadea a 1,1 s de golpe, como una terminal, y el
    bloque se apaga junto con su aureola (si no, queda el halo solo, un fantasma).
@@ -397,7 +406,7 @@
   top: 0;
   left: 0;
   pointer-events: none;
-  transition: opacity var(--ox-t-1) var(--ox-ease-soft);
+  transition: opacity var(--op-t-1) var(--op-ease-soft);
 }
 .ub-cursor::before {
   content: '';
@@ -406,16 +415,16 @@
   top: 50%;
   height: 1.3em;
   transform: translateY(-50%);
-  background: var(--ox-accent);
-  box-shadow: 0 0 7px var(--ox-accent);
-  transition: background-color var(--ox-t-2) var(--ox-ease-soft),
-              box-shadow var(--ox-t-2) var(--ox-ease-soft);
+  background: var(--op-accent);
+  box-shadow: 0 0 7px rgb(var(--op-accent-rgb) / .7);
+  transition: background-color var(--op-t-2) var(--op-ease-soft),
+              box-shadow var(--op-t-2) var(--op-ease-soft);
 }
 .ub-cursor__letra {
   position: relative;
   display: block;
   white-space: pre;
-  color: var(--ox-accent-ink);
+  color: var(--op-accent-ink);
 }
 .ub-cursor.is-latiendo::before { animation: ub-cursor-bloque 1.1s step-end infinite; }
 .ub-cursor.is-latiendo .ub-cursor__letra { animation: ub-cursor-letra 1.1s step-end infinite; }
@@ -425,8 +434,8 @@
    quieto, y la letra del campo se lee a través. */
 .ub-cursor.is-quieto::before {
   animation: none;
-  background: color-mix(in srgb, var(--ox-accent) 30%, transparent);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--ox-accent) 22%, transparent);
+  background: rgb(var(--op-accent-rgb) / .26);
+  box-shadow: 0 0 6px rgb(var(--op-accent-rgb) / .16);
 }
 .ub-cursor.is-quieto .ub-cursor__letra { animation: none; color: transparent; }
 .ub-cursor.is-oculto { opacity: 0; }
@@ -435,27 +444,28 @@
 }
 /* Los números de línea, en la columna del margen izquierdo. Tenues; el del
    renglón del cursor, más claro. Un número nuevo entra fundiéndose por color
-   (no por opacidad, que le saca el ClearType). */
+   (no por opacidad, que le saca el ClearType). Son decoración del margen, no
+   datos: por eso pueden ir en el gris más bajo. */
 .ub-lineas {
   position: absolute;
   top: 0;
   left: 0;
-  width: calc(var(--ox-3) + var(--ub-borr-num) * 1ch);
+  width: calc(var(--op-3) + var(--ub-note-num) * 1ch);
   overflow: hidden;
   pointer-events: none;
 }
 .ub-lineas__n {
   position: absolute;
   top: 0;
-  left: var(--ox-3);
+  left: var(--op-3);
   right: 0;
   text-align: right;
-  color: var(--ox-text-4);
+  color: var(--op-text-4);
   font-variant-numeric: tabular-nums;
-  transition: color var(--ox-t-1) var(--ox-ease-soft);
-  animation: ub-lineas-n var(--ox-t-2) var(--ox-ease-soft);
+  transition: color var(--op-t-1) var(--op-ease-soft);
+  animation: ub-lineas-n var(--op-t-2) var(--op-ease-soft);
 }
-.ub-lineas__n.is-actual { color: var(--ox-text-2); }
+.ub-lineas__n.is-actual { color: var(--op-text-2); }
 @keyframes ub-lineas-n { from { color: transparent; } }
 
 /* El espejo con el que se mide dónde cae el cursor (y cada número): misma
@@ -471,70 +481,71 @@
   height: 0;
 }
 
-/* Buscar en el Borrador (Ctrl+F): la barra flota arriba a la derecha del
-   campo, al lado de la scrollbar (10 px), y entra y sale como un popover.
-   El canto se aclara con el foco adentro: ese es su anillo. */
+/* Buscar en el Notepad (Ctrl+F): la barra flota arriba a la derecha del
+   campo, al lado de la scrollbar (10 px), y entra y sale por opacidad. Se
+   ubica contra .ub-note, que lleva la sangría de la vista (--op-6) a cada
+   lado del campo: por eso la cuenta la suma. Vive
+   adentro de la hoja de la vista, sobre el pozo: relleno de luz con su base
+   oscura, sin blur. El canto se aviva con el foco adentro: ese es su anillo. */
 .ub-buscar {
   position: absolute;
-  top: var(--ox-2);
-  right: calc(10px + var(--ox-2));
+  top: var(--op-2);
+  right: calc(var(--op-6) + 10px + var(--op-2));
   display: flex;
   align-items: center;
   gap: 2px;
   height: 32px;
-  max-width: calc(100% - 2 * var(--ox-4));
-  padding: 0 var(--ox-1) 0 var(--ox-3);
-  border-radius: var(--ox-r-md);
-  background: var(--ox-s3);
-  --ox-surface: var(--ox-s3);
-  box-shadow: var(--ox-hairline), var(--ox-e3);
-  transform-origin: top right;
-  animation: ox-pop-in var(--ox-t-2) var(--ox-ease) both;
-  transition: box-shadow var(--ox-t-2) var(--ox-ease-soft);
+  max-width: calc(100% - 2 * var(--op-6) - 2 * var(--op-4));
+  padding: 0 var(--op-1) 0 var(--op-3);
+  border-radius: var(--op-r-md);
+  background: var(--op-flota);
+  box-shadow: var(--op-sheet), var(--op-e3);
+  animation: op-fade-in var(--op-t-2) var(--op-ease) both;
+  transition: box-shadow var(--op-t-2) var(--op-ease-soft);
 }
-.ub-buscar:focus-within { box-shadow: inset 0 0 0 1px var(--ox-line-3), var(--ox-e3); }
-.ub-buscar[data-state='closing'] { animation: ox-pop-out var(--ox-t-1) var(--ox-ease-in) both; }
-.ub-buscar > .ox-icon {
+.ub-buscar:focus-within { box-shadow: inset 0 1px 0 var(--op-edge-lit), inset 0 0 0 1px var(--op-rim), var(--op-e3); }
+.ub-buscar[data-state='closing'] { animation: op-fade-out var(--op-t-out) var(--op-ease-in) both; }
+.ub-buscar > .op-icon {
   flex: none;
   width: 14px;
   height: 14px;
-  color: var(--ox-text-4);
-  transition: color var(--ox-t-2) var(--ox-ease-soft);
+  color: var(--op-text-4);
+  transition: color var(--op-t-2) var(--op-ease-soft);
 }
-.ub-buscar:focus-within > .ox-icon { color: var(--ox-text-2); }
+.ub-buscar:focus-within > .op-icon { color: var(--op-text-2); }
 .ub-buscar__q {
   flex: 1 1 auto;
   width: 180px;
   min-width: 0;
   height: 100%;
-  padding: 0 var(--ox-2);
+  padding: 0 var(--op-2);
   border: 0;
   background: transparent;
-  color: var(--ox-text);
+  color: var(--op-text);
   font: inherit;
-  font-size: var(--ox-fs-13);
+  font-size: var(--op-fs-13);
   user-select: text;
 }
-.ub-buscar__q::placeholder { color: var(--ox-text-4); }
-.ub-buscar__q:focus-visible { box-shadow: none; }   /* el anillo es el canto de la barra */
+.ub-buscar__q::placeholder { color: var(--op-text-4); }
+.ub-buscar__q:focus-visible { outline: none; }   /* el anillo es el canto de la barra */
 /* Ancho fijo: «Sin resultados» y «3 de 12» no mueven la barra. */
 .ub-buscar__n {
   flex: none;
   width: 88px;
-  padding-right: var(--ox-1);
+  padding-right: var(--op-1);
   text-align: right;
   white-space: nowrap;
-  font-size: var(--ox-fs-11);
+  font-size: var(--op-fs-11);
   font-variant-numeric: tabular-nums;
-  color: var(--ox-text-3);
-  transition: color var(--ox-t-1) var(--ox-ease-soft);
+  color: var(--op-text-3);
+  transition: color var(--op-t-1) var(--op-ease-soft);
 }
-.ub-buscar.is-sin .ub-buscar__n { color: var(--ox-danger); }
+.ub-buscar.is-sin .ub-buscar__n { color: var(--op-danger); }
 
 /* Lo encontrado: una capa encima del campo con el mismo texto, transparente,
-   y cada coincidencia teñida. La actual va como el cursor: violeta entero con
-   la letra en oscuro. Las que llegan se tiñen de a poco; las que se van se
-   esfuman en el calco de la tira vieja. */
+   y cada coincidencia teñida de luz. La actual va como el cursor: el bloque
+   de luz con la letra en oscuro. Las que llegan se tiñen de a poco; las que
+   se van se esfuman en el calco de la tira vieja. */
 .ub-hallazgos {
   position: absolute;
   top: 0;
@@ -549,23 +560,20 @@
   box-sizing: border-box;
   color: transparent;
 }
-.ub-hallazgos__tira[data-state='closing'] { animation: ox-fade-out var(--ox-t-1) var(--ox-ease-both) both; }
+.ub-hallazgos__tira[data-state='closing'] { animation: op-fade-out var(--op-t-1) var(--op-ease-both) both; }
 .ub-hallazgo {
   border-radius: 2px;
-  background: rgb(var(--ox-accent-rgb) / .28);
+  background: rgb(var(--op-accent-rgb) / .2);
   color: transparent;
-  transition: background-color var(--ox-t-1) var(--ox-ease-soft),
-              color var(--ox-t-1) var(--ox-ease-soft),
-              box-shadow var(--ox-t-1) var(--ox-ease-soft);
+  transition: background-color var(--op-t-1) var(--op-ease-soft),
+              color var(--op-t-1) var(--op-ease-soft),
+              box-shadow var(--op-t-1) var(--op-ease-soft);
 }
 .ub-hallazgo.is-actual {
-  background: var(--ox-accent);
-  color: var(--ox-accent-ink);
-  box-shadow: 0 0 7px rgb(var(--ox-accent-rgb) / .55);
+  background: var(--op-accent);
+  color: var(--op-accent-ink);
+  box-shadow: 0 0 7px rgb(var(--op-accent-rgb) / .55);
 }
-.ub-hallazgo.is-nueva { animation: ub-hallazgo-entra var(--ox-t-2) var(--ox-ease-soft); }
+.ub-hallazgo.is-nueva { animation: ub-hallazgo-entra var(--op-t-2) var(--op-ease-soft); }
 @keyframes ub-hallazgo-entra { from { background-color: transparent; box-shadow: none; color: transparent; } }
 .ub-hallazgo.is-sigue { visibility: hidden; }
-
-/* La purga se pliega adentro de su grupo, que tiene otro espacio entre botones. */
-#files-tools { --ox-plegable-gap: var(--ox-1); }

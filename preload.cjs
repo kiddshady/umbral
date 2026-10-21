@@ -2,7 +2,7 @@
 
 /* ═══════════════════════════════════════════════════════════════════════════
    UMBRAL — preload
-   La única puerta entre el renderer y el sistema. `onyx` es la del framework
+   La única puerta entre el renderer y el sistema. `opal` es la del framework
    (ventana, ajustes, documentos) y `umbral` la de la app: así se nota qué es
    de cada uno. Regla: exponé funciones, nunca objetos de Electron.
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -23,8 +23,10 @@ const on = (channel, cb) => {
   return () => ipcRenderer.off(channel, handler);
 };
 
-contextBridge.exposeInMainWorld('onyx', {
+contextBridge.exposeInMainWorld('opal', {
   info: () => call('app:info'),
+  /** Los archivos de datos ilegibles que se apartaron en esta corrida. */
+  asides: () => call('store:asides'),
 
   win: {
     minimize: () => ipcRenderer.send('win:minimize'),
@@ -34,6 +36,11 @@ contextBridge.exposeInMainWorld('onyx', {
     /** El renderer le pasa a la ventana su color base ya resuelto (ver app.js). */
     setBackground: (hex) => ipcRenderer.send('win:set-bg', hex),
     onMaximized: (cb) => on('win:maximized', cb),
+  },
+
+  /** Leer el portapapeles (el "Pegar" del menú de los campos). */
+  clip: {
+    read: () => call('clip:read'),
   },
 
   settings: {
@@ -88,11 +95,13 @@ contextBridge.exposeInMainWorld('umbral', {
     open: () => ipcRenderer.invoke('update:open'),
     onState: (cb) => on('update:state', cb),
   },
-  // El Borrador: vive en borrador.txt (main) y lo puede cambiar también el celu.
-  borrador: {
-    get: () => ipcRenderer.invoke('borrador:get'),
-    set: (text) => ipcRenderer.invoke('borrador:set', text),
-    onChanged: (cb) => on('borrador:changed', cb),
+  // El Notepad: vive en notepad.txt (main) y lo cambian también el celu y CC.
+  notepad: {
+    get: () => ipcRenderer.invoke('notepad:get'),
+    set: (text) => ipcRenderer.invoke('notepad:set', text),
+    onChanged: (cb) => on('notepad:changed', cb),
+    // `Umbral.exe --notepad` (el /notepad del mod): ir a la vista.
+    onIr: (cb) => on('ir:notepad', cb),
   },
   // Texto plano al portapapeles, y el aviso de que se la llamó con el atajo.
   copyText: (text) => ipcRenderer.invoke('texto:copy', text),

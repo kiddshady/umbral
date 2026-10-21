@@ -1,7 +1,7 @@
 'use strict';
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   ONYX — puente IPC
+   UMBRAL — puente IPC (de Opal)
    El renderer no tiene fs, ni require, ni red: `contextIsolation` está activo.
    Todo lo que necesite del sistema pasa por acá, y acá se decide qué se puede
    pedir. Es la superficie de ataque de la app: todo lo que agregues es una
@@ -12,7 +12,8 @@
    renderer escribe try/catch normal en vez de chequear banderas.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const { ipcMain, app } = require('electron');
+const { ipcMain, app, clipboard } = require('electron');
+const path = require('path');
 const store = require('./store.cjs');
 
 /* Las colecciones que el renderer puede tocar. Es una lista blanca a
@@ -44,6 +45,14 @@ function register() {
     dataDir: store.ROOT,
     electron: process.versions.electron,
   }));
+  // Los archivos de datos que se apartaron por ilegibles: la app lo avisa.
+  handle('store:asides', () => store.asides().map((a) => ({ file: path.basename(a.file), dead: a.dead })));
+
+  /* El texto del portapapeles, para el "Pegar" del menú de los campos. Desde
+     la página, leerlo pide un permiso; acá no. Con tope: un portapapeles
+     gigante no tiene por qué cruzar entero. Desde Electron 44 el
+     portapapeles del proceso principal es asíncrono, como el de la web. */
+  handle('clip:read', async () => (await clipboard.readText()).slice(0, 100000));
 
   handle('settings:get', () => store.loadSettings());
   handle('settings:save', (patch) => store.saveSettings(patch));

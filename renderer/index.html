@@ -27,10 +27,10 @@
     z-index: 9999;
     display: grid;
     place-items: center;
-    background: #0b0a0f;
+    background: #0a0a0a;
     transition: opacity .34s cubic-bezier(.16, 1, .3, 1);
   }
-  #boot-splash svg { width: 46px; height: 46px; stroke: #9d7bff; fill: none;
+  #boot-splash svg { width: 46px; height: 46px; stroke: #f0f3f7; fill: none;
                      stroke-width: 1.1; stroke-linecap: round; stroke-linejoin: round; }
   /* La marca se DIBUJA, no aparece: el arco primero, la rendija de luz detrás.
      Es el mismo trazo que el ícono `arch` de app.js: si divergen, el arranque
@@ -49,72 +49,74 @@
   </svg>
 </div>
 
-<div class="ox-app ub-app">
+<div class="op-app ub-app">
 
-  <!-- ── Titlebar propia: acá no hay frame nativo ─────────────────────────── -->
-  <header class="ox-titlebar">
-    <div class="ox-brand ox-no-drag" id="brand">
-      <svg class="ox-brand__mark ox-icon" viewBox="0 0 16 16" aria-hidden="true">
+  <!-- El sustrato: la niebla que el vidrio difumina. Una capa, estática. -->
+  <div class="op-fog" aria-hidden="true"></div>
+
+  <!-- ── Titlebar propia: aire sobre la niebla, sin frame nativo ─────────── -->
+  <header class="op-titlebar">
+    <div class="op-brand op-no-drag" id="brand">
+      <svg class="op-brand__mark op-icon" viewBox="0 0 16 16" aria-hidden="true">
         <path d="M3.67 13.67v-6a4.33 4.33 0 0 1 8.66 0v6"/>
-        <path class="ox-brand__trail" d="M8 7.33v6.34"/>
+        <path class="op-brand__trail" d="M8 7.33v6.34"/>
       </svg>
-      <span class="ox-brand__name">Umbral</span>
-    </div>
-
-    <div class="ox-wincontrols">
-      <button class="ox-wincontrol" id="win-min"   aria-label="Minimizar"><i data-icon="winMin"></i></button>
-      <button class="ox-wincontrol" id="win-max"   aria-label="Maximizar"><i data-icon="winMax"></i></button>
-      <button class="ox-wincontrol ox-wincontrol--close" id="win-close" aria-label="Cerrar"><i data-icon="winClose"></i></button>
+      <span class="op-brand__name">Umbral</span>
     </div>
   </header>
 
-  <!-- ── La barra: qué lado del umbral, dónde escucha, y las herramientas ── -->
-  <div class="ub-bar">
-    <!-- Los contadores nacen vacíos: el primer dato no es un cambio. -->
-    <div class="ox-segmented" id="seg">
-      <button class="ox-segmented__opt is-active" data-value="recibidas">Recibidas <span class="ub-count" id="n-in"></span></button>
-      <button class="ox-segmented__opt" data-value="celu">Para el celu <span class="ub-count" id="n-out"></span></button>
-      <button class="ox-segmented__opt" data-value="borrador">Borrador</button>
-    </div>
+  <div class="op-wincontrols">
+    <button class="op-wincontrol" id="win-min"   aria-label="Minimizar"><i data-icon="winMin"></i></button>
+    <button class="op-wincontrol op-iconswap" id="win-max" aria-label="Maximizar"><i data-icon="winMax"></i><i data-icon="winRestore"></i></button>
+    <button class="op-wincontrol op-wincontrol--close" id="win-close" aria-label="Cerrar"><i data-icon="winClose"></i></button>
+  </div>
 
-    <span class="ox-vr ub-bar__sep"></span>
+  <div class="op-body">
 
-    <div class="ub-server">
-      <span id="srv-mark"></span>
-      <span class="ub-addr ox-mono ox-copyable" id="addr"></span>
-      <button class="ox-iconbtn" id="btn-qr" data-tip="QR para el teléfono" data-tip-side="bottom"><i data-icon="qr"></i></button>
-    </div>
-
-    <div class="ox-spacer"></div>
-
-    <!-- Solo en «Para el celu»: se pliega a lo ancho con `hidden`. -->
-    <div class="ub-bar__group ox-plegable--ancho" id="out-tools" hidden>
-      <button class="ox-iconbtn" id="btn-add" data-tip="Agregar archivos" data-tip-side="bottom"><i data-icon="plus"></i></button>
-      <button class="ox-iconbtn" id="btn-sweep" data-tip="Quitar las ya bajadas" data-tip-side="bottom"><i data-icon="sweep"></i></button>
-    </div>
-
-    <!-- Las miniaturas y la purga no tienen sentido en el Borrador. -->
-    <div class="ub-size ub-bar__group ox-plegable--ancho" id="size-tools" data-tip="Tamaño de las miniaturas" data-tip-side="bottom">
-      <i data-icon="sizeSm"></i>
-      <input type="range" class="ox-slider" id="thumb-size" min="150" max="420" step="10" aria-label="Tamaño de las miniaturas">
-      <i data-icon="sizeLg"></i>
-    </div>
-
-    <div class="ub-bar__group" id="files-tools">
-      <button class="ox-iconbtn" id="btn-folder" data-tip="Abrir la carpeta" data-tip-side="bottom"><i data-icon="folder"></i></button>
-      <div class="ub-bar__group ox-plegable--ancho" id="nuke-tools">
-        <button class="ox-iconbtn ub-nuke" id="btn-nuke" data-tip="Purgar todo" data-tip-side="bottom"><i data-icon="nuke"></i></button>
+    <!-- ── Rail: los dos lados del umbral y el Notepad ───────────────────── -->
+    <nav class="op-rail">
+      <div class="op-rail__nav op-scroll">
+        <div class="op-rail__group">
+          <!-- Los contadores nacen vacíos: el primer dato no es un cambio. -->
+          <button class="op-navitem" data-view="recibidas" data-tip="Lo que llegó del celu" data-tip-key="Ctrl+1" data-tip-side="right">
+            <i data-icon="inbox"></i> Recibidas <span class="op-navitem__count" id="n-in"></span>
+          </button>
+          <button class="op-navitem" data-view="celu" data-tip="Lo que espera para bajar al celu" data-tip-key="Ctrl+2" data-tip-side="right">
+            <i data-icon="phoneDown"></i> Para el celu <span class="op-navitem__count ub-count" id="n-out"></span>
+          </button>
+          <button class="op-navitem" data-view="notepad" data-tip="El texto que comparten la PC, el celu y CC" data-tip-key="Ctrl+3" data-tip-side="right">
+            <i data-icon="notepad"></i> Notepad
+          </button>
+        </div>
       </div>
-    </div>
+
+      <!-- Vincular el celu: el QR para el navegador y el código para la app. -->
+      <div class="op-rail__foot ub-rail-foot">
+        <button class="op-btn op-btn--secondary op-btn--sm op-flashable ub-vincular" id="btn-qr">
+          <i data-icon="qr"></i> Vincular el celu
+        </button>
+      </div>
+    </nav>
+
+    <!-- ── Vista ─────────────────────────────────────────────────────────── -->
+    <main class="op-main" id="view"></main>
   </div>
 
-  <div class="ox-body">
-    <main class="ox-main" id="view"></main>
-  </div>
+  <!-- ── Statusbar: dónde escucha Umbral ──────────────────────────────────── -->
+  <footer class="op-statusbar">
+    <div class="op-statusbar__item ub-server">
+      <span id="srv-mark"></span>
+      <span class="op-statusbar__value op-mono op-copyable" id="addr"></span>
+    </div>
+    <div class="op-spacer"></div>
+    <div class="op-statusbar__item" data-tip="Trae Umbral desde cualquier lado" data-tip-side="top">
+      <span class="op-kbd">Ctrl</span><span class="op-kbd">Shift</span><span class="op-kbd">U</span>
+    </div>
+  </footer>
 </div>
 
 <!-- Todos los overlays se portalean acá: fuera del flujo, por encima de todo. -->
-<div id="ox-layer"></div>
+<div id="op-layer"></div>
 <input id="file-pick" type="file" multiple hidden>
 
 <script type="module" src="./js/app.js"></script>

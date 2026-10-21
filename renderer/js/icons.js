@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   ONYX — íconos
+   OPAL — íconos
    Todo símbolo de la app es un SVG propio, dibujado sobre grilla de 16, trazo
    1.5 y puntas redondeadas. Cero emojis y cero glifos unicode: se renderizan
    distinto en cada máquina, no se les controla el peso ni el color, y rompen el
@@ -7,22 +7,23 @@
 
    Este es el set BASE: lo que necesita cualquier app de escritorio. Los íconos
    de tu dominio van en tu propio archivo y se suman con `Icons.add({...})` —
-   así el set de Onyx queda estable y actualizable sin pisarte los tuyos.
+   así el set de Opal queda estable y actualizable sin pisarte los tuyos.
 
    Uso:
      Icons.svg('play')                      → string SVG
-     Icons.svg('play', 'ox-icon--sm')       → con clases extra
+     Icons.svg('play', 'op-icon--sm')       → con clases extra
      <i data-icon="play"></i> + Icons.mount(root)   → reemplazo declarativo
      Icons.add({ miIcono: '<path d="…"/>' })        → sumar los propios
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const P = {
   /* ── Identidad ─────────────────────────────────────────────────────────────
-     La marca de Onyx: una piedra tallada vista de frente. El canto exterior y
-     la mesa del centro apagada — la misma jerarquía por elevación que rige todo
-     el sistema, dicha en un símbolo de 16 px. */
-  onyx: '<path d="M10.33 2.36H5.67L2.36 5.67v4.66l3.31 3.31h4.66l3.31-3.31V5.67z"/>'
-      + '<path class="ox-brand__trail" d="M9.11 5.32H6.89L5.32 6.89v2.22l1.57 1.57h2.22l1.57-1.57V6.89z"/>',
+     La marca de Opal: un cabujón — la piedra pulida, sin facetas, con su fuego
+     adentro. El círculo es la piedra; el arco interior es la luz que juega
+     debajo de la superficie. Donde Onyx talla aristas, Opal pule curvas: la
+     misma jerarquía (canto pleno, interior apagado) dicha en vidrio. */
+  opal: '<path d="M8 2.4a5.6 5.6 0 1 1 0 11.2a5.6 5.6 0 1 1 0-11.2"/>'
+      + '<path class="op-brand__trail" d="M4.33 7.02A3.8 3.8 0 0 1 7.02 4.33"/>',
 
   /* ── Navegación ────────────────────────────────────────────────────────── */
   home: '<path d="M2.4 6.9 8 2.2l5.6 4.7v6.1a1.2 1.2 0 0 1-1.2 1.2H3.6a1.2 1.2 0 0 1-1.2-1.2z"/><path d="M6.3 14.2V9.4h3.4v4.8"/>',
@@ -94,10 +95,9 @@ const P = {
 
   /* ── Seguridad y visibilidad ───────────────────────────────────────────── */
   lock: '<rect x="3" y="7" width="10" height="6.8" rx="2"/><path d="M5.4 7V5.2a2.6 2.6 0 0 1 5.2 0V7"/>',
-  /* La llave, de contorno continuo (traída de la passKey de Prism): el ojo y
-     el eje con su diente son una sola silueta, sin palitos sueltos. Se dibuja
-     acostada, con el ojo a la derecha y el agujero hacia la punta, y
-     rotate(-45) la pone en diagonal. */
+  /* La llave de Prism (su `passKey`): el ojo y el eje con su diente son una
+     sola silueta de contorno continuo. Se dibuja acostada, con el ojo a la
+     derecha y el agujero hacia la punta, y rotate(-45) la pone en diagonal. */
   key: '<g transform="rotate(-45 8 8)"><path d="M8.31 6.6H1.9V9.4H3.2V11H5.8V9.4H8.31A3.3 3.3 0 1 0 8.31 6.6Z"/><circle cx="12.3" cy="8" r="1" fill="currentColor" stroke="none"/></g>',
   eye: '<path d="M1.4 8S4 3.4 8 3.4 14.6 8 14.6 8 12 12.6 8 12.6 1.4 8 1.4 8z"/><circle cx="8" cy="8" r="2.2"/>',
   eyeOff: '<path d="M6.3 3.7A6.4 6.4 0 0 1 8 3.4c4 0 6.6 4.6 6.6 4.6a12 12 0 0 1-2 2.6M4 4.8A11.7 11.7 0 0 0 1.4 8S4 12.6 8 12.6a6.7 6.7 0 0 0 2.4-.4"/><path d="M6.5 6.5a2.2 2.2 0 0 0 3 3M2.2 2.2l11.6 11.6"/>',
@@ -128,7 +128,7 @@ function svg(name, extraClass = '') {
     console.warn(`[Icons] no existe "${name}"`);
     return '';
   }
-  const cls = extraClass ? `ox-icon ${extraClass}` : 'ox-icon';
+  const cls = extraClass ? `op-icon ${extraClass}` : 'op-icon';
   return `<svg class="${cls}" viewBox="0 0 16 16" aria-hidden="true">${body}</svg>`;
 }
 
@@ -146,9 +146,9 @@ function add(set) {
 /* El spinner es su propio caso: el arco recorre el círculo en vez de girar
    rígido, y la pista de atrás evita que el vacío se lea como un hueco. */
 function spinner(extraClass = '') {
-  return `<svg class="ox-icon ${extraClass}" viewBox="0 0 16 16" aria-hidden="true">
+  return `<svg class="op-icon ${extraClass}" viewBox="0 0 16 16" aria-hidden="true">
     <circle cx="8" cy="8" r="6" stroke="currentColor" opacity=".18"/>
-    <circle cx="8" cy="8" r="6" style="animation: ox-arc 1.4s var(--ox-ease-both) infinite, ox-spin 1.6s linear infinite; transform-origin: center"/>
+    <circle cx="8" cy="8" r="6" style="animation: op-arc 1.4s var(--op-ease-both) infinite, op-spin 1.6s linear infinite; transform-origin: center"/>
   </svg>`;
 }
 

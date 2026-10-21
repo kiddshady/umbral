@@ -1,21 +1,21 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   ONYX — overlays
-   Tooltip, toast, menú y modal. Todos se portalean a #ox-layer, todos entran y
+   OPAL — overlays
+   Tooltip, toast, menú y modal. Todos se portalean a #op-layer, todos entran y
    SALEN animados, y ninguno usa un primitivo del sistema: acá no hay title=
    amarillo ni confirm() de Chromium.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 import { Icons } from './icons.js';
-import { exit, scrollFade } from './motion.js';
+import { exit, scrollFade, collapse } from './motion.js';
 
 const GAP = 8;      // separación entre el overlay y su ancla
 const EDGE = 10;    // margen mínimo contra el borde de la ventana
 
 function layer() {
-  let el = document.getElementById('ox-layer');
+  let el = document.getElementById('op-layer');
   if (!el) {
     el = document.createElement('div');
-    el.id = 'ox-layer';
+    el.id = 'op-layer';
     document.body.appendChild(el);
   }
   return el;
@@ -39,14 +39,22 @@ const Tooltip = (() => {
   let timer = null;
   let left = -Infinity;  // cuándo se fue el último por salir de su ancla
 
-  function hide(immediate = false) {
-    clearTimeout(timer);
+  let watch = null;      // vigila que el ancla siga en el DOM mientras se ve
+  let byKey = false;     // el que espera llegó con el teclado
+
+  /** `keep`: el que espera para aparecer sigue esperando (ver el scroll). */
+  function hide(immediate = false, { keep = false } = {}) {
+    if (!keep) clearTimeout(timer);
+    clearInterval(watch);
     if (!current) return;
     const el = current;
     current = null;
     anchor = null;
-    if (immediate) el.remove();
-    else { left = performance.now(); exit(el, { fallback: 160 }); }
+    /* Hasta el "ya" (un click, un scroll) se va con su salida corta: quitado
+       de un cuadro al otro, era lo único que desaparecía de golpe. Solo el
+       que se va por salir de su ancla calienta la espera del siguiente. */
+    if (!immediate) left = performance.now();
+    exit(el, { fallback: 160 });
   }
 
   function show(el) {
@@ -54,19 +62,25 @@ const Tooltip = (() => {
     anchor = el;
 
     const tip = document.createElement('div');
-    tip.className = 'ox-tooltip';
+    tip.className = 'op-tooltip';
     tip.textContent = el.dataset.tip;
     if (el.dataset.tipKey) {
       const k = document.createElement('span');
-      k.className = 'ox-tooltip__key';
+      k.className = 'op-tooltip__key';
       k.textContent = el.dataset.tipKey;
       tip.appendChild(k);
     }
     layer().appendChild(tip);
     current = tip;
+    /* Si el ancla se va del DOM mientras se ve (una lista que se repinta), el
+       navegador no manda pointerout, y el tooltip quedaba clavado. El mouse
+       puede no moverse más: se mira cada tanto. */
+    watch = setInterval(() => { if (!anchor?.isConnected) hide(true); }, 250);
 
     const a = el.getBoundingClientRect();
-    const t = tip.getBoundingClientRect();
+    /* El tamaño de layout, no el del rectángulo: la entrada ya arrancó y la
+       escala lo achica, y quedaba unos 2,5 px descentrado de su ancla. */
+    const t = { width: tip.offsetWidth, height: tip.offsetHeight };
     const side = el.dataset.tipSide || 'top';
 
     let x, y;
@@ -84,70 +98,77 @@ const Tooltip = (() => {
     tip.style.top = `${Math.round(y)}px`;
   }
 
-  /* Moverse entre botones vecinos no reinicia la espera larga. No alcanza con
-     mirar `current`: el pointerout del botón anterior llega ANTES que este
-     pointerover y ya lo cerró. Por eso cuenta también el que se acaba de ir.
-     La espera corta (100 ms) es lo que dura su salida: el nuevo aparece
-     cuando el viejo terminó de irse, sin encimarse. Si el ancla se fue del
-     DOM durante la espera, no hay dónde anclarlo: saldría en la esquina. */
-  function programar(el, sigue = () => true) {
-    clearTimeout(timer);
-    const warm = current || performance.now() - left < 400;
-    timer = setTimeout(() => { if (el.isConnected && sigue()) show(el); }, warm ? 100 : 420);
+  /* Un botón de solo ícono con data-tip y sin aria-label es, para un lector de
+     pantalla, «botón» a secas: el texto del tooltip pasa a ser su nombre. Lo
+     que la app nombró por su cuenta no se toca. */
+  const named = new WeakSet();
+  function label(root) {
+    const els = root.querySelectorAll ? [...root.querySelectorAll('[data-tip]')] : [];
+    if (root.matches?.('[data-tip]')) els.push(root);
+    for (const el of els) {
+      if (el.textContent.trim()) continue;
+      if (el.hasAttribute('aria-label') && !named.has(el)) continue;
+      el.setAttribute('aria-label', el.dataset.tip);
+      named.add(el);
+    }
   }
 
   function init(root = document) {
-    root.addEventListener('pointerover', (e) => {
-      const el = e.target.closest?.('[data-tip]');
-      if (!el || el === anchor) return;
-      programar(el);
-    });
-    root.addEventListener('pointerout', (e) => {
-      const el = e.target.closest?.('[data-tip]');
-      if (el && el === anchor) hide();
-      else if (el) clearTimeout(timer);
-    });
+    label(document.body);
+    new MutationObserver((muts) => {
+      for (const m of muts) {
+        if (m.type === 'attributes') label(m.target);
+        else m.addedNodes.forEach((n) => { if (n.nodeType === 1) label(n); });
+      }
+    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-tip'] });
 
-    /* Con el teclado también. Solo con el pointerover, el que recorre la
-       ventana con Tab no veía ningún tooltip, y ahí viven los atajos
-       (`data-tip-key`): Quire tenía una docena que la interfaz nunca decía
-       (ux-17). Va cuando el foco es :focus-visible y llegó NAVEGANDO con el
-       teclado: un campo de texto clickeado también es :focus-visible, y un
-       tooltip encima de lo que se está por tipear estorba.
-
-       Navegar es Tab, no cualquier tecla. Con «cualquier tecla» contaba como
-       teclado el foco que pone un script después de una: el Enter o el Escape
-       que cierran un modal (Modal.close devuelve el foco al botón que lo
-       abrió, y ese foco es :focus-visible) o un atajo que enfoca un campo
-       (Ctrl+F). Al cerrar el «Renombrar» de la sonda con Enter, a los 420 ms
-       aparecía «Renombrar F2» encima del botón sin que nadie hubiera tabulado;
-       en Quire, el tacho de «Borrar toda la tinta» al salir de su confirm.
-       Cualquier otra tecla lo apaga, y también corta el que estaba por salir:
-       el que tabula a un campo y empieza a escribir no lo ve aparecer encima.
-       Una app que mueve el foco con otras teclas (las flechas de una barra)
-       las suma acá. */
-    let teclado = false;
-    root.addEventListener('keydown', (e) => { teclado = e.key === 'Tab'; }, true);
+    /* Con el teclado también: el que llega con Tab a un botón de ícono tiene
+       que poder saber qué hace. Solo con :focus-visible; el foco que deja un
+       click no lo muestra. */
     root.addEventListener('focusin', (e) => {
       const el = e.target.closest?.('[data-tip]');
-      if (!el || el === anchor || !teclado || !e.target.matches(':focus-visible')) return;
-      programar(el, () => teclado && el.contains(document.activeElement));
+      if (!el || el === anchor || !el.matches(':focus-visible')) return;
+      clearTimeout(timer);
+      const warm = current || performance.now() - left < 400;
+      byKey = true;
+      timer = setTimeout(() => { if (el.isConnected && el.matches(':focus')) show(el); }, warm ? 110 : 420);
     });
     root.addEventListener('focusout', (e) => {
       const el = e.target.closest?.('[data-tip]');
       if (el && el === anchor) hide();
       else if (el) clearTimeout(timer);
     });
+    // Escape lo descarta sin mover el foco (y sigue de largo: no es suyo).
+    root.addEventListener('keydown', (e) => { if (e.key === 'Escape' && current) hide(true); });
 
-    /* Un tooltip flotando sobre un click o un scroll es basura visual. Al
-       click se va con su salida (110 ms): cortado con remove() desaparecía de
-       un cuadro al otro justo donde uno está mirando. Al scroll sí en el acto,
-       porque quedaría flotando separado de lo que señala. */
-    root.addEventListener('pointerdown', () => { teclado = false; hide(); });
-    window.addEventListener('scroll', () => hide(true), true);
-    // Volver a la ventana (Alt+Tab) le devuelve el foco al mismo botón: eso
-    // no es tabular hasta él.
-    window.addEventListener('blur', () => { teclado = false; hide(true); });
+    root.addEventListener('pointerover', (e) => {
+      // El ancla se fue del DOM: el pointerout no llega nunca.
+      if (current && anchor && !anchor.isConnected) hide(true);
+      const el = e.target.closest?.('[data-tip]');
+      if (!el || el === anchor) return;
+      clearTimeout(timer);
+      /* Moverse entre botones vecinos no reinicia la espera larga. No alcanza con
+         mirar `current`: el pointerout del botón anterior llega ANTES que este
+         pointerover y ya lo cerró. Por eso cuenta también el que se acaba de ir.
+         La espera corta (110 ms) es lo que dura su salida: el nuevo aparece
+         cuando el viejo terminó de irse, sin encimarse. Si el ancla se fue del
+         DOM durante la espera, no hay dónde anclarlo: saldría en la esquina. */
+      const warm = current || performance.now() - left < 400;
+      byKey = false;
+      timer = setTimeout(() => { if (el.isConnected) show(el); }, warm ? 110 : 420);
+    });
+    root.addEventListener('pointerout', (e) => {
+      const el = e.target.closest?.('[data-tip]');
+      if (el && el === anchor) hide();
+      else if (el) clearTimeout(timer);
+    });
+    // Un tooltip flotando sobre un click o un scroll es basura visual.
+    root.addEventListener('pointerdown', () => hide(true));
+    /* El scroll se lleva al que se ve (su lugar ya no es ese). Al que espera
+       por el teclado no: llegar con Tab a un botón fuera de la vista lo
+       acerca con un scroll, y eso cancelaba justo el tooltip que se pedía. */
+    window.addEventListener('scroll', () => hide(true, { keep: byKey }), true);
+    window.addEventListener('blur', () => hide(true));
   }
 
   return { init, hide };
@@ -158,10 +179,20 @@ const Tooltip = (() => {
 const Toast = (() => {
   let host = null;
 
+  /* UNO A LA VEZ: los avisos no se apilan. Uno que llega con otro a la vista:
+     · si dice lo MISMO (título, texto y tono), no se dispara: el que está
+       vuelve a empezar su cuenta y su barra. Pasaba en Nexus al tocar dos
+       veces «Buscar ahora»: dos «Estás al día» encimados;
+     · si dice otra cosa, lo RELEVA: el viejo sale y el nuevo entra en su lugar
+       cuando el viejo ya va por la mitad de su salida (no se descarta: podría
+       ser un error que hay que ver). */
+  let actual = null;   // { el, clave, close, renovar }
+  const RELEVO = 120;  // ms: el nuevo espera a que el viejo vaya por la mitad
+
   function ensure() {
     if (host && host.isConnected) return host;
     host = document.createElement('div');
-    host.className = 'ox-toasts';
+    host.className = 'op-toasts';
     layer().appendChild(host);
     return host;
   }
@@ -169,65 +200,134 @@ const Toast = (() => {
   /**
    * Toast.show({ title, text, tone: 'default'|'error', duration, icon, action })
    * duration:0 → se queda hasta que lo cierren.
+   * action: { label, run } → un botón adentro (Deshacer, Ver…); traído de Onyx.
+   * Devuelve { el, close }. Con uno igual a la vista, devuelve el de ese.
    */
   function show({ title, text = '', tone = 'default', duration = 4200, icon, action } = {}) {
+    const clave = `${tone}
+${title}
+${text}`;
+    let relevo = false;
+    if (actual && actual.el.dataset.state !== 'closing') {
+      if (actual.clave === clave) { actual.renovar(); return { el: actual.el, close: actual.close }; }
+      actual.close();
+      relevo = true;
+    }
+
     const el = document.createElement('div');
-    el.className = `ox-toast${tone === 'error' ? ' ox-toast--error' : ''}`;
+    el.className = `op-toast${tone === 'error' ? ' op-toast--error' : ''}`;
     el.style.setProperty('--life', `${duration}ms`);
 
     const glyph = icon || (tone === 'error' ? 'alert' : 'info');
     el.innerHTML = `
-      ${Icons.svg(glyph, 'ox-icon--sm')}
-      <div class="ox-toast__main">
-        <div class="ox-toast__title"></div>
-        ${text ? '<div class="ox-toast__text"></div>' : ''}
-        ${action ? '<button class="ox-btn ox-btn--secondary ox-btn--sm ox-toast__action"></button>' : ''}
+      ${Icons.svg(glyph, 'op-icon--sm')}
+      <div class="op-toast__main">
+        <div class="op-toast__title"></div>
+        ${text ? '<div class="op-toast__text"></div>' : ''}
+        ${action ? '<button class="op-btn op-btn--secondary op-btn--sm op-toast__action"></button>' : ''}
       </div>
-      <button class="ox-iconbtn ox-iconbtn--sm" data-close>${Icons.svg('close')}</button>
-      ${duration ? '<span class="ox-toast__life"></span>' : ''}`;
+      <button class="op-iconbtn op-iconbtn--sm" data-close aria-label="Cerrar">${Icons.svg('close')}</button>
+      ${duration ? '<span class="op-toast__life"></span>' : ''}`;
 
     // textContent, no innerHTML: el contenido puede venir de un error real.
-    el.querySelector('.ox-toast__title').textContent = title;
-    if (text) el.querySelector('.ox-toast__text').textContent = text;
+    el.querySelector('.op-toast__title').textContent = title;
+    if (text) el.querySelector('.op-toast__text').textContent = text;
 
-    ensure().appendChild(el);
-
-    const close = () => exit(el, { fallback: 260 });
+    let timer = 0;
+    /* Sale deslizándose y después se pliega: lo de alrededor acompaña en vez
+       de saltar cuando el que se fue sale del DOM. */
+    const close = () => {
+      if (el.dataset.state === 'closing') return;
+      el.dataset.state = 'closing';
+      clearTimeout(timer);
+      if (actual?.el === el) actual = null;
+      if (!el.isConnected) return;          // lo cerraron antes de entrar (relevo)
+      let folded = false;
+      const fold = () => {
+        if (folded) return;
+        folded = true;
+        el.style.opacity = '0';
+        el.style.animation = 'none';        // ya terminó de salir: que no vuelva a entrar
+        collapse(el, { duration: 180 });
+      };
+      el.addEventListener('animationend', (e) => { if (e.target === el) fold(); });
+      setTimeout(fold, 260);
+    };
     el.querySelector('[data-close]').addEventListener('click', close);
-    // action: { label, run } → un botón adentro del toast (Deshacer, Ver…). Al
-    // apretarlo el toast se cierra y corre `run`. Es lo que permite que una
-    // acción no pida permiso antes y aun así tenga vuelta atrás.
+    // action: { label, run } → al apretarlo el toast se cierra y corre `run`.
+    // Es lo que permite que una acción no pida permiso antes y aun así tenga
+    // vuelta atrás.
     if (action) {
-      const btn = el.querySelector('.ox-toast__action');
+      const btn = el.querySelector('.op-toast__action');
       btn.textContent = action.label;
       btn.addEventListener('click', () => { close(); action.run?.(); });
     }
 
+    /* Hover pausa la cuenta: si te acercás a leerlo, no se te escapa. Lo que
+       queda se lleva a mano, descontando lo que corrió. Antes se leía de la
+       escala de la barra y la cuenta estaba al revés: tocado apenas aparecía,
+       se cerraba enseguida con la barra casi llena; tocado al final, se
+       quedaba casi toda la duración con la barra ya vacía. */
+    let left = duration;
+    let since = 0;
+    let encima = false;
+    const life = el.querySelector('.op-toast__life');
+    const correr = (ms) => { since = performance.now(); timer = setTimeout(close, ms); };
     if (duration) {
-      let timer = setTimeout(close, duration);
-      const life = el.querySelector('.ox-toast__life');
-      // Hover pausa la cuenta: si te acercás a leerlo, no se te escapa.
       el.addEventListener('pointerenter', () => {
+        encima = true;
         clearTimeout(timer);
+        left -= performance.now() - since;
         if (life) life.style.animationPlayState = 'paused';
       });
       el.addEventListener('pointerleave', () => {
+        encima = false;
         if (life) life.style.animationPlayState = 'running';
-        const left = life ? duration * (1 - (parseFloat(getComputedStyle(life).transform.split(',')[0].replace('matrix(', '')) || 0)) : 1200;
-        timer = setTimeout(close, Math.max(900, left));
+        // Un respiro mínimo para soltarlo, aunque ya casi no le quedara.
+        correr(Math.max(900, left));
       });
     }
-    return { close, el };
+
+    /* El mismo aviso otra vez: la cuenta vuelve a empezar y la barra se
+       rellena (eso es lo que se ve: el pedido llegó). */
+    const renovar = () => {
+      if (!duration) return;
+      clearTimeout(timer);
+      left = duration;
+      if (life) {
+        life.style.animation = 'none';
+        void life.offsetWidth;
+        life.style.animation = '';
+        if (encima) life.style.animationPlayState = 'paused';
+      }
+      if (!encima) correr(left);
+    };
+
+    actual = { el, clave, close, renovar };
+    const montar = () => {
+      if (el.dataset.state === 'closing') return;
+      ensure().appendChild(el);
+      if (duration) correr(left);
+    };
+    if (relevo) setTimeout(montar, RELEVO);
+    else montar();
+
+    return { el, close };
   }
 
   return { show, error: (title, text) => show({ title, text, tone: 'error', duration: 7000 }) };
 })();
 
 /* ══ Menú ════════════════════════════════════════════════════════════════════
-   items: { label, icon, key, hint, danger, selected, disabled, onSelect }
+   items: { label, icon, dot, key, danger, selected, disabled, onSelect, mount }
           | { sep:true } | { groupLabel }
-   `hint` es una aclaración atenuada después del nombre: las medidas de un
-   papel, «del sistema» en la impresora predeterminada. */
+   `dot` es un color (cualquier valor de CSS, también un var()): en vez de un
+   ícono, un puntito de ese color —una etiqueta, un tono de piel—. Ocupa el
+   mismo ancho que un ícono, así las filas no bailan. Va por style, no
+   pegado en el HTML: si el color viene de un dato, no puede colar marcado.
+   (De Moji, que lo traía de su copia de Onyx.)
+   `mount(button)` recibe el ítem ya armado: para uno que cambia mientras el
+   menú está abierto (un porcentaje que avanza). */
 
 const Menu = (() => {
   let open = null;
@@ -238,13 +338,14 @@ const Menu = (() => {
     open = null;
     anchor?.classList.remove('is-open');
     onClose?.();
-    immediate ? el.remove() : exit(el, { fallback: 200 });
+    // También cuando lo reemplaza otro overlay: se va con su salida, no de golpe.
+    exit(el, { fallback: 200 });
     document.removeEventListener('keydown', onKey, true);
   }
 
   function move(dir) {
     if (!open) return;
-    const items = [...open.el.querySelectorAll('.ox-menuitem:not(:disabled)')];
+    const items = [...open.el.querySelectorAll('.op-menuitem:not(:disabled)')];
     if (!items.length) return;
     const i = items.findIndex((it) => it.classList.contains('is-active'));
     const next = items[(i + dir + items.length) % items.length] || items[0];
@@ -255,10 +356,14 @@ const Menu = (() => {
 
   function onKey(e) {
     if (!open) return;
+    /* Las teclas que usa el menú no siguen de largo: con el menú de un campo
+       (FieldMenu, abajo) el foco sigue en el campo, y las flechas moverían
+       su cursor; y un Enter que elige un ítem no llega a la fila de atrás,
+       que se abriría con él. */
     if (e.key === 'Escape')          { e.stopPropagation(); close(); }
-    else if (e.key === 'ArrowDown')  { e.preventDefault(); move(1); }
-    else if (e.key === 'ArrowUp')    { e.preventDefault(); move(-1); }
-    else if (e.key === 'Enter')      { e.preventDefault(); open.el.querySelector('.ox-menuitem.is-active')?.click(); }
+    else if (e.key === 'ArrowDown')  { e.preventDefault(); e.stopPropagation(); move(1); }
+    else if (e.key === 'ArrowUp')    { e.preventDefault(); e.stopPropagation(); move(-1); }
+    else if (e.key === 'Enter')      { e.preventDefault(); e.stopPropagation(); open.el.querySelector('.op-menuitem.is-active')?.click(); }
   }
 
   function show(anchorEl, items, { align = 'start', onClose } = {}) {
@@ -274,38 +379,39 @@ const Menu = (() => {
     close(true);
 
     const el = document.createElement('div');
-    el.className = 'ox-menu ox-scroll';
+    el.className = 'op-menu op-scroll';
     el.setAttribute('role', 'menu');
 
     items.forEach((it) => {
       if (it.sep) {
-        el.insertAdjacentHTML('beforeend', '<div class="ox-menu__sep"></div>');
+        el.insertAdjacentHTML('beforeend', '<div class="op-menu__sep"></div>');
         return;
       }
       if (it.groupLabel) {
         const l = document.createElement('div');
-        l.className = 'ox-menu__label';
+        l.className = 'op-menu__label';
         l.textContent = it.groupLabel;
         el.appendChild(l);
         return;
       }
       const b = document.createElement('button');
-      b.className = `ox-menuitem${it.danger ? ' ox-menuitem--danger' : ''}${it.selected ? ' is-selected' : ''}`;
+      b.className = `op-menuitem${it.danger ? ' op-menuitem--danger' : ''}${it.selected ? ' is-selected' : ''}`;
       b.setAttribute('role', 'menuitem');
       if (it.disabled) b.disabled = true;
       b.innerHTML = `
-        ${it.icon ? Icons.svg(it.icon) : '<span style="width:14px"></span>'}
-        <span class="ox-truncate"></span>
-        ${it.hint ? '<span class="ox-menuitem__hint"></span>' : ''}
-        ${it.key ? `<span class="ox-menuitem__key">${it.key}</span>` : ''}
-        ${it.selected ? Icons.svg('check', 'ox-icon--sm') : ''}`;
-      b.querySelector('span.ox-truncate').textContent = it.label;
-      /* El hint se dibuja. Antes se descartaba en silencio, y tres menús de
-         Quire lo mandaban: el papel con sus medidas y las impresoras con «del
-         sistema» (ux-07). textContent: suele venir de un dato. */
-      if (it.hint) b.querySelector('.ox-menuitem__hint').textContent = it.hint;
+        ${it.dot ? '<span class="op-menuitem__dot"></span>' : it.icon ? Icons.svg(it.icon) : '<span style="width:14px"></span>'}
+        <span class="op-truncate"></span>
+        ${it.key ? `<span class="op-menuitem__key">${it.key}</span>` : ''}
+        ${it.selected ? Icons.svg('check', 'op-icon--sm') : ''}`;
+      b.querySelector('span.op-truncate').textContent = it.label;
+      if (it.dot) b.querySelector('.op-menuitem__dot').style.background = it.dot;
+      // Un menú no se lleva el foco (como uno nativo): el campo del click
+      // derecho conserva su selección, y cortar o pegar caen sobre ella.
+      b.addEventListener('mousedown', (e) => e.preventDefault());
       b.addEventListener('click', () => { close(); it.onSelect?.(it); });
       el.appendChild(b);
+      // Un ítem vivo (un porcentaje que avanza mientras el menú está abierto).
+      it.mount?.(b);
     });
 
     layer().appendChild(el);
@@ -313,18 +419,33 @@ const Menu = (() => {
     anchorEl.classList.add('is-open');
 
     const a = anchorEl.getBoundingClientRect();
-    const m = el.getBoundingClientRect();
-    let x = align === 'end' ? a.right - m.width : a.left;
-    let y = a.bottom + 6;
-    // Si abajo no entra, abre hacia arriba y cambia el origen de la animación.
-    const flipUp = y + m.height > window.innerHeight - EDGE;
-    if (flipUp) y = a.top - m.height - 6;
+    /* El tamaño de layout, no el del rectángulo: la entrada ya arrancó y la
+       escala lo achica, y el menú se ubicaba como si fuera más chico (quedaba
+       pegado al borde de la ventana). */
+    const m = { width: el.offsetWidth, height: el.offsetHeight };
+    /* Abre abajo del ancla; si abajo no entra y arriba hay más lugar, arriba
+       (y la animación nace de ese lado). El alto es el lugar que hay de ese
+       lado, no un tope fijo: con un 60 % de la ventana, un menú largo
+       escondía sus últimos ítems (en Prism, «Salir» con la ventana de
+       fábrica), y nada avisaba que había más. Si igual no entra, se
+       desplaza, con la barrita a la vista mientras quede algo escondido
+       (overlays.css). */
+    const below = window.innerHeight - (a.bottom + 6) - EDGE;
+    const above = a.top - 6 - EDGE;
+    const flipUp = m.height > below && above > below;
+    const room = Math.max(80, flipUp ? above : below);
+    const h = Math.min(m.height, room);
+    if (m.height > room) el.style.maxHeight = `${Math.floor(room)}px`;
+    // Desplazándose aparece la barrita, que lo ensancha: el ancho se mide después.
+    const w = m.height > room ? el.offsetWidth : m.width;
+    let x = align === 'end' ? a.right - w : a.left;
+    let y = flipUp ? a.top - h - 6 : a.bottom + 6;
     el.style.setProperty('--origin', `${flipUp ? 'bottom' : 'top'} ${align === 'end' ? 'right' : 'left'}`);
 
-    [x, y] = clamp(x, y, m.width, m.height);
+    [x, y] = clamp(x, y, w, h);
     el.style.left = `${Math.round(x)}px`;
     el.style.top = `${Math.round(y)}px`;
-    el.style.minWidth = `${Math.max(m.width, a.width)}px`;
+    el.style.minWidth = `${Math.max(w, a.width)}px`;
 
     open = { el, anchor: anchorEl, onClose };
     document.addEventListener('keydown', onKey, true);
@@ -346,66 +467,104 @@ const Menu = (() => {
     return { close };
   }
 
-  return { show, close, get isOpen() { return !!open; } };
+  /** El menú en un punto de la ventana (un click derecho): el ancla es un punto invisible. */
+  function showAt(x, y, items, opts = {}) {
+    let point = document.getElementById('op-anchor');
+    if (!point) {
+      point = document.createElement('div');
+      point.id = 'op-anchor';
+      point.className = 'op-anchor';
+      document.body.appendChild(point);
+    }
+    // El ancla es siempre la misma: pedirlo otra vez es abrirlo en el punto nuevo, no cerrarlo.
+    close(true);
+    point.style.left = `${Math.round(x)}px`;
+    point.style.top = `${Math.round(y) - 6}px`;   // show() lo baja 6 px: que nazca en el cursor
+    return show(point, items, { align: 'start', ...opts });
+  }
+
+  return { show, showAt, close, get isOpen() { return !!open; } };
+})();
+
+/* ══ Menú de los campos ══════════════════════════════════════════════════════
+   Electron no trae menú contextual en los campos, y sin esto el click derecho
+   en un input no hacía nada: no se podía pegar con el mouse. Es el de Chrome,
+   dibujado por nosotros. Como el menú no se lleva el foco, cada acción cae
+   sobre el campo con su selección intacta. FieldMenu.init() lo prende para
+   toda la app; un campo que quiera otro menú hace preventDefault antes. */
+
+const FieldMenu = (() => {
+  // Los que no se escriben (number, date, color…) no llevan este menú.
+  const TEXT_TYPES = new Set(['text', 'search', 'url', 'email', 'tel', 'password']);
+  const fieldOf = (target) => {
+    const el = target?.closest?.('input, textarea');
+    if (!el || (el.tagName === 'INPUT' && !TEXT_TYPES.has(el.type))) return null;
+    return el;
+  };
+  const exec = (cmd, value) => document.execCommand(cmd, false, value);
+  /* Leer el portapapeles desde la página pide un permiso, y una app que sume
+     su propio manejador de permisos lo apagaría sin aviso: lo lee el proceso
+     principal (clip:read en ipc.cjs). */
+  const readClip = () => Promise.resolve(window.opal?.clip?.read?.() ?? navigator.clipboard.readText()).catch(() => '');
+
+  async function open(field, x, y) {
+    const ro = field.readOnly || field.disabled;
+    const secret = field.type === 'password';
+    const hasSel = field.selectionEnd > field.selectionStart;
+    const all = !!field.value && field.selectionStart === 0 && field.selectionEnd === field.value.length;
+    const canUndo = !ro && document.queryCommandEnabled('undo');
+    const clip = await readClip();
+    return Menu.showAt(x, y, [
+      { label: 'Deshacer', key: 'Ctrl Z', disabled: !canUndo, onSelect: () => exec('undo') },
+      { sep: true },
+      { label: 'Cortar', key: 'Ctrl X', disabled: ro || secret || !hasSel, onSelect: () => exec('cut') },
+      { label: 'Copiar', icon: 'copy', key: 'Ctrl C', disabled: secret || !hasSel, onSelect: () => exec('copy') },
+      // Se vuelve a leer al elegir: lo copiado pudo cambiar con el menú abierto.
+      { label: 'Pegar', key: 'Ctrl V', disabled: ro || !clip, onSelect: async () => exec('insertText', (await readClip()) || clip) },
+      { label: 'Suprimir', disabled: ro || !hasSel, onSelect: () => exec('delete') },
+      { sep: true },
+      { label: 'Seleccionar todo', key: 'Ctrl A', disabled: !field.value || all, onSelect: () => field.select() },
+    ]);
+  }
+
+  function init(root = document) {
+    root.addEventListener('contextmenu', (e) => {
+      const field = !e.defaultPrevented && fieldOf(e.target);
+      if (!field) return;
+      e.preventDefault();
+      open(field, e.clientX, e.clientY);
+    });
+  }
+
+  return { init, open };
 })();
 
 /* ══ Modal ═══════════════════════════════════════════════════════════════════ */
 
-/* Los campos de un renglón: ahí Enter es «listo» y no un salto de línea. */
-const UN_RENGLON = new Set(['text', 'search', 'email', 'url', 'tel', 'password', 'number']);
+/** Los campos de una línea: los que se confirman con Enter. */
+const TEXT_FIELDS = ['text', 'search', 'url', 'email', 'tel', 'password', 'number']
+  .map((t) => `input[type="${t}"]:not([disabled])`).join(', ') + ', input:not([type]):not([disabled])';
 
 const Modal = (() => {
   let open = null;
+  /* Los que pidieron turno con otro abierto. El nuevo pisaba al de abajo, que
+     quedaba con su velo tapando todo y sin forma de cerrarse (sus botones y
+     Escape llamaban a un close() que ya no lo conocía), y su promesa no se
+     resolvía nunca. Ahora espera: al cerrarse el actual, hereda su velo. */
+  const waiting = [];
 
-  /* Cierra el que está abierto. `pisado` lo pasa solo show(), cuando abre
-     otro encima: el velo se queda para el nuevo y la caja sale en relevo. No
-     es una opción de Modal.close: desde afuera, un close que dejara el velo
-     puesto lo dejaría huérfano para siempre. */
-  function cerrar(result, pisado = false) {
+  function close(result) {
     if (!open) return;
-    const { scrim, anim, resolve, restore } = open;
+    const { scrim, anim, req, restore } = open;
     open = null;
     document.removeEventListener('keydown', onKey, true);
-    /* La caja que se va ya no contesta. data-state=closing no apaga los
-       eventos y .ox-modal lleva pointer-events: auto: durante su salida se
-       la podía clickear, y su botón llamaba a close(), que cierra al que
-       esté abierto —el NUEVO—. Medido: el «Borrar todo» de abajo, a los
-       40 ms, contestaba con su valor el modal de arriba. */
-    anim.inert = true;
-    if (pisado) anim.classList.add('ox-modal__anim--pisada');
+    const next = waiting.shift();
+    // Con alguien esperando, la salida va pareja: el que entra asoma mientras se va.
+    if (next) anim.classList.add('is-relayed');
     exit(anim, { fallback: 300 });
-    if (!pisado) exit(scrim, { fallback: 300 });
-    restore?.focus?.();
-    resolve(result);
-  }
-  const close = (result) => cerrar(result);
-
-  /* El velo de un modal que se acaba de cerrar, si todavía se está yendo:
-     el que abre ahora lo revive en vez de poner otro debajo (ver show). */
-  function veloSaliendo() {
-    const v = [...layer().children].reverse()
-      .find((n) => n.classList.contains('ox-scrim') && n.dataset.state === 'closing');
-    if (!v) return null;
-    const op = +getComputedStyle(v).opacity;
-    // Sin data-state, exit() ya no lo saca (ver exit en motion.js). Vuelve a
-    // su opacidad desde donde iba: --ox-desde es el `from` de su animación.
-    delete v.dataset.state;
-    v.style.setProperty('--ox-desde', String(op));
-    v.classList.add('ox-scrim--vuelve');
-    return v;
-  }
-
-  /* Con una caja todavía saliendo, la nueva espera su turno (is-after). Si la
-     de abajo se cerró en este mismo cuadro (close y show seguidos), también
-     pasa a la salida del relevo: todavía no se movió, así que cambiarle la
-     curva no salta. Si ya venía saliendo, se la deja como va. */
-  function cajaSaliendo() {
-    const a = [...layer().children]
-      .find((n) => n.classList.contains('ox-modal__anim') && n.dataset.state === 'closing');
-    if (!a) return false;
-    const t = a.getAnimations()[0]?.currentTime;
-    if (t == null || t < 17) a.classList.add('ox-modal__anim--pisada');
-    return true;
+    if (next) mount(next, { scrim, restore });
+    else { exit(scrim, { fallback: 300 }); restore?.focus?.(); }
+    req.resolve(result);
   }
 
   function onKey(e) {
@@ -417,8 +576,19 @@ const Modal = (() => {
          adentro del diálogo y arrepentirse cerraba el diálogo entero y se
          llevaba todo lo tipeado. El que ya está saliendo no cuenta: sigue en
          el DOM hasta que termine su animación. */
-      if (document.querySelector('.ox-menu:not([data-state="closing"])')) return;
+      if (document.querySelector('.op-menu:not([data-state="closing"])')) return;
       e.preventDefault(); e.stopPropagation(); close(null);
+    }
+    /* Enter en un campo de una línea confirma, como en un formulario: no hay
+       <form>, y había que ir con el mouse hasta el botón. Solo la acción
+       primaria, nunca la destructiva; no en un textarea (Enter es un renglón
+       nuevo), no con un menú abierto encima (el Enter es suyo), no mientras
+       se arma, y no a mitad de una composición del teclado. */
+    if (e.key === 'Enter' && !e.isComposing && open.primary && e.target.matches?.(TEXT_FIELDS)
+        && open.anim.contains(e.target) && !open.anim.classList.contains('is-arming')
+        && !document.querySelector('.op-menu:not([data-state="closing"])')) {
+      e.preventDefault(); e.stopPropagation(); open.primary.click();
+      return;
     }
     if (e.key !== 'Tab') return;
     // Trampa de foco: el tabulador no se escapa del modal.
@@ -430,155 +600,130 @@ const Modal = (() => {
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   }
 
-  /* Enter en un campo de un renglón resuelve con la acción primaria, como en
-     cualquier diálogo de escritorio: sin esto, escribir «1-7, 12» en el rango
-     de Quire y apretar Enter no hacía nada (ux-06, imprimir-16). Solo si hay
-     UNA primaria y está prendida: una vista que apaga «Aplicar» mientras el
-     dato no sirve tiene que poder frenarlo. Nunca con la roja
-     (`danger-solid`): lo que no tiene vuelta atrás no sale de un Enter
-     tipeado al pasar. Escucha en la burbuja del propio modal, así un campo
-     que maneja su Enter (y llama a preventDefault) gana. */
-  function alEnter(e) {
-    if (!open || e.key !== 'Enter' || e.defaultPrevented || e.isComposing) return;
-    if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
-    if (e.target.tagName !== 'INPUT' || !UN_RENGLON.has(e.target.type)) return;
-    // Con un menú abierto encima (un select del diálogo), el Enter es suyo.
-    if (document.querySelector('.ox-menu:not([data-state="closing"])')) return;
-    const primarias = open.botones.filter(({ a }) => a.variant === 'primary');
-    if (primarias.length !== 1 || primarias[0].b.disabled) return;
-    /* El preventDefault no es de adorno: al cerrar, el foco vuelve al botón
-       que abrió el modal, y el mismo Enter le llegaba como click y lo volvía
-       a abrir. Medido en el humo. */
-    e.preventDefault();
-    close(primarias[0].a.value);
-  }
-
-  /* El foco de arranque, si ninguna acción pide `autofocus`: el primer campo
-     del cuerpo —es lo que se viene a hacer—; si no hay, la acción primaria; si
-     no, la primera del pie. Nunca la cruz del encabezado: antes iba al primer
-     botón o campo del modal, que en orden es la cruz, y lo que se tipeaba no
-     entraba a ningún lado. */
-  function focoInicial(bodyEl, foot, botones) {
-    const campo = [...bodyEl.querySelectorAll('input:not([type="hidden"]), textarea, select')]
-      .find((el) => !el.disabled && el.getClientRects().length);
-    return campo
-      || botones.find(({ a, b }) => a.variant === 'primary' && !b.disabled)?.b
-      || foot?.querySelector('button:not(:disabled)')
-      || null;
-  }
-
   /**
-   * Modal.show({ title, sub, body, actions, width, dismissible })
+   * Modal.show({ title, sub, body, actions, width, dismissible, signal, arm })
    * actions: [{ label, value, variant, autofocus }]  → resuelve con `value`.
    * body puede ser string HTML o un Node.
-   * El foco arranca en la acción con `autofocus`; sin ninguna, en el primer
-   * campo del cuerpo (ver focoInicial). Enter en un campo de un renglón
-   * resuelve con la única acción `primary` (ver alEnter).
+   * Con otro abierto, espera su turno. `signal` (de un AbortController) lo
+   * retira: si todavía espera, sale de la fila sin verse; si ya se ve, se
+   * cierra con null. Cierra ESE modal, no el que esté a la vista.
+   * `arm` (ms): para lo que se abre solo, sin que la persona lo pida (algo
+   * que llega de afuera: un proceso que termina, otra ventana, un aviso del
+   * sistema). Durante ese rato sus botones no toman clicks, y el foco
+   * arranca en el diálogo, no en un botón: un segundo click o un Enter que
+   * venía para otra cosa no contesta por la persona.
    */
-  function show({ title, sub = '', body = '', actions = [], width, dismissible = true } = {}) {
+  function show(opts = {}) {
     return new Promise((resolve) => {
-      /* Un modal abierto encima de otro lo pisa: el de abajo se contesta con
-         null y sale con su exit(). Antes quedaba huérfano —su promesa no se
-         resolvía nunca, y su velo y su caja se quedaban en el DOM, tapando
-         la app aunque se cerrara el nuevo— (Quire, 2F). El velo NO se va: lo
-         hereda el nuevo. Con uno saliendo y otro entrando se apilaban dos
-         capas a .62 y la pantalla se oscurecía de golpe (medido: hasta .79)
-         en el medio del cambio; el mismo velo queda quieto. Y si el de antes
-         ya se había cerrado (close y show seguidos) y su velo todavía se iba,
-         ese velo vuelve: el mismo oscurecimiento salía por ahí. */
-      const heredado = open?.scrim || null;
-      if (open) cerrar(null, true);
-      const revivido = heredado ? null : veloSaliendo();
-      const scrim = heredado || revivido || document.createElement('div');
-      if (!revivido) scrim.className = 'ox-scrim';
-
-      // Dos cajas que se reemplazan hacen un relevo, no se cruzan en el
-      // centro (motion-timing, regla 2).
-      const anim = document.createElement('div');
-      anim.className = `ox-modal__anim${cajaSaliendo() ? ' is-after' : ''}`;
-
-      const modal = document.createElement('div');
-      modal.className = 'ox-modal';
-      if (width) modal.style.width = `min(${width}px, calc(100vw - 96px))`;
-      modal.setAttribute('role', 'dialog');
-      modal.setAttribute('aria-modal', 'true');
-
-      modal.innerHTML = `
-        <div class="ox-modal__head">
-          <div class="ox-grow">
-            <div class="ox-modal__title"></div>
-            ${sub ? '<div class="ox-modal__sub"></div>' : ''}
-          </div>
-          ${dismissible ? `<button class="ox-iconbtn" data-dismiss data-tip="Cerrar" data-tip-key="Esc">${Icons.svg('close')}</button>` : ''}
-        </div>
-        <div class="ox-modal__body ox-scroll"></div>
-        ${actions.length ? '<div class="ox-modal__foot"></div>' : ''}`;
-
-      modal.querySelector('.ox-modal__title').textContent = title;
-      if (sub) modal.querySelector('.ox-modal__sub').textContent = sub;
-
-      const bodyEl = modal.querySelector('.ox-modal__body');
-      if (body instanceof Node) bodyEl.appendChild(body);
-      else bodyEl.innerHTML = body;
-
-      const foot = modal.querySelector('.ox-modal__foot');
-      const botones = actions.map((a) => {
-        const b = document.createElement('button');
-        b.className = `ox-btn ox-flashable ox-btn--${a.variant || 'ghost'}`;
-        b.textContent = a.label;
-        // Atado a SU modal: aunque la caja se vuelva inerte al irse, un
-        // click que ya venía en camino no le contesta al que la pisó.
-        b.addEventListener('click', () => { if (open?.anim === anim) close(a.value); });
-        foot.appendChild(b);
-        return { a, b };
-      });
-
-      modal.querySelector('[data-dismiss]')?.addEventListener('click', () => { if (open?.anim === anim) close(null); });
-      // En propiedad y no con addEventListener: un velo heredado traería el
-      // oyente del modal de antes, y cerraría uno que no se deja descartar.
-      scrim.onclick = dismissible ? () => close(null) : null;
-
-      anim.appendChild(modal);
-      // El heredado (o el revivido) ya está en la capa: moverlo le
-      // reiniciaría la animación. La caja nueva va encima de todo.
-      if (heredado || revivido) layer().append(anim);
-      else layer().append(scrim, anim);
-      Icons.mount(modal);
-      scrollFade(bodyEl);
-
-      open = { scrim, anim, resolve, restore: document.activeElement, botones };
-      document.addEventListener('keydown', onKey, true);
-      anim.addEventListener('keydown', alEnter);
-      setTimeout(() => {
-        if (open?.anim !== anim) return;          // ya se cerró
-        const el = botones.find(({ a }) => a.autofocus)?.b || focoInicial(bodyEl, foot, botones);
-        el?.focus();
-        // Un campo que ya trae un valor (renombrar) queda seleccionado: se
-        // escribe encima, como en cualquier diálogo de escritorio.
-        if (el?.tagName === 'INPUT' && UN_RENGLON.has(el.type)) el.select();
-      }, 60);
+      const req = { opts, resolve };
+      const { signal } = opts;
+      if (signal?.aborted) { resolve(null); return; }
+      signal?.addEventListener('abort', () => {
+        const i = waiting.indexOf(req);
+        if (i >= 0) { waiting.splice(i, 1); resolve(null); }
+        else if (open?.req === req) close(null);
+      }, { once: true });
+      if (open) waiting.push(req);
+      else mount(req);
     });
   }
 
-  /** Confirmación destructiva: el rojo aparece acá porque algo se va a romper.
-      Con `danger` el foco arranca en Cancelar: con él en el botón rojo, un
-      Enter por reflejo borraba lo que no se recupera (Quire, «¿Borrar toda la
-      tinta?», ux-09). */
+  /** Lo arma y lo muestra. `inherited`: el velo y el foco del que se acaba de ir. */
+  function mount(req, inherited = null) {
+    const { title, sub = '', body = '', actions = [], width, dismissible = true, arm = 0 } = req.opts;
+    let scrim = inherited?.scrim;
+    if (!scrim) {
+      scrim = document.createElement('div');
+      scrim.className = 'op-scrim';
+      // Un solo oyente por velo, aunque pase de un modal al siguiente.
+      scrim.addEventListener('click', () => { if (open?.dismissible) close(null); });
+    }
+
+    const anim = document.createElement('div');
+    anim.className = `op-modal__anim${inherited ? ' is-after' : ''}`;
+    // Lo de un modal que ya se está yendo no cierra al que vino después.
+    const mine = (fn) => () => { if (open?.anim === anim) fn(); };
+
+    const modal = document.createElement('div');
+    modal.className = 'op-modal';
+    if (width) modal.style.width = `min(${width}px, calc(100vw - 96px))`;
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+
+    modal.innerHTML = `
+      <div class="op-modal__head">
+        <div class="op-grow">
+          <div class="op-modal__title"></div>
+          ${sub ? '<div class="op-modal__sub"></div>' : ''}
+        </div>
+        ${dismissible ? `<button class="op-iconbtn" data-dismiss data-tip="Cerrar" data-tip-key="Esc">${Icons.svg('close')}</button>` : ''}
+      </div>
+      <div class="op-modal__body op-scroll"></div>
+      ${actions.length ? '<div class="op-modal__foot"></div>' : ''}`;
+
+    modal.querySelector('.op-modal__title').textContent = title;
+    if (sub) modal.querySelector('.op-modal__sub').textContent = sub;
+
+    const bodyEl = modal.querySelector('.op-modal__body');
+    if (body instanceof Node) bodyEl.appendChild(body);
+    else bodyEl.innerHTML = body;
+
+    const foot = modal.querySelector('.op-modal__foot');
+    let primary = null;
+    let auto = null;
+    actions.forEach((a) => {
+      const b = document.createElement('button');
+      b.className = `op-btn op-flashable op-btn--${a.variant || 'ghost'}`;
+      b.textContent = a.label;
+      b.addEventListener('click', mine(() => close(a.value)));
+      foot.appendChild(b);
+      if (a.variant === 'primary' && !primary) primary = b;
+      if (a.autofocus && !auto) auto = b;
+    });
+
+    modal.querySelector('[data-dismiss]')?.addEventListener('click', mine(() => close(null)));
+
+    anim.appendChild(modal);
+    if (inherited) layer().append(anim);
+    else layer().append(scrim, anim);
+    Icons.mount(modal);
+    scrollFade(bodyEl);
+
+    // El foco vuelve a donde estaba antes del PRIMERO de la fila.
+    const restore = inherited ? inherited.restore : document.activeElement;
+    open = { scrim, anim, req, dismissible, restore, primary };
+    document.addEventListener('keydown', onKey, true);
+    if (arm) {
+      anim.classList.add('is-arming');
+      setTimeout(() => anim.classList.remove('is-arming'), arm);
+      modal.tabIndex = -1;
+      setTimeout(() => modal.focus(), 60);
+    } else {
+      /* El foco: al botón con autofocus si alguno lo pide. Es una decisión de
+         quien arma el diálogo: en uno de opciones (imprimir) Enter va al
+         botón, y las flechas no pueden cambiar las copias. Si nadie lo pide,
+         adonde se va a escribir: el primer campo visible del cuerpo (con el
+         foco en «Guardar», había que ir con el mouse hasta el nombre). Sin
+         campos, el primero del pie; antes caía en la X de cerrar. */
+      const field = [...bodyEl.querySelectorAll(`${TEXT_FIELDS}, textarea:not([disabled]), select:not([disabled])`)]
+        .find((f) => f.checkVisibility({ visibilityProperty: true }));
+      setTimeout(() => (auto || field || foot?.querySelector('button') || anim.querySelector('button'))?.focus(), 60);
+    }
+  }
+
+  /** Confirmación destructiva: el rojo aparece acá porque algo se va a romper. */
   function confirm({ title, sub, confirmLabel = 'Confirmar', danger = false } = {}) {
     return show({
       title,
       sub,
       actions: [
-        { label: 'Cancelar', value: false, autofocus: danger },
-        { label: confirmLabel, value: true, variant: danger ? 'danger-solid' : 'primary', autofocus: !danger },
+        { label: 'Cancelar', value: false },
+        { label: confirmLabel, value: true, variant: danger ? 'danger-solid' : 'primary', autofocus: true },
       ],
     }).then((v) => v === true);
   }
 
-  /* isOpen: para que los atajos de una vista no actúen detrás del velo (en
-     Quire, Ctrl+Z y Espacio llegaban al documento de atrás). Mientras sale ya
-     cuenta como cerrado. */
-  return { show, confirm, close, get isOpen() { return !!open; } };
+  return { show, confirm, close };
 })();
 
-export { Tooltip, Toast, Menu, Modal };
+export { Tooltip, Toast, Menu, FieldMenu, Modal };

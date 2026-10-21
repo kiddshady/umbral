@@ -93,23 +93,23 @@ app.whenReady().then(async () => {
 
   console.log('\n1. Arranque');
   ok('el splash se fue', !(await js(`!!document.getElementById('boot-splash')`)));
-  ok('el shell de Onyx está montado', await js(`!!document.querySelector('.ox-titlebar') && !!document.querySelector('.ox-segmented') && !!document.getElementById('view')`));
+  ok('el shell de Opal está montado', await js(`!!document.querySelector('.op-titlebar') && !!document.querySelector('.op-rail') && !!document.querySelector('.op-fog') && !!document.getElementById('view')`));
   ok('los <i data-icon> se reemplazaron por SVG', !(await js(`!!document.querySelector('i[data-icon]')`)));
   const vista = await rect('#view');
-  ok('la vista ocupa todo el ancho de la ventana (no hay rail)', !!vista && vista.x === 0 && Math.abs(vista.w - vista.vw) < 1, JSON.stringify(vista));
+  const rail = await rect('.op-rail');
+  ok('el rail y la vista son hojas separadas por aire', !!vista && !!rail && rail.x > 0 && vista.x > rail.x + rail.w && vista.x + vista.w < vista.vw, JSON.stringify({ rail, vista }));
+  ok('las dos hojas son vidrio y la galería no', await js(`['.op-rail', '#view'].every((s) => getComputedStyle(document.querySelector(s)).backdropFilter.includes('blur'))`));
+  ok('el rail marca Recibidas', (await js(`document.querySelector('.op-navitem.is-active')?.dataset.view`)) === 'recibidas');
   ok('la vista inicial es Recibidas y está vacía', await js(`!!document.querySelector('#view .ub-empty')`));
   const addr = await js(`document.getElementById('addr').textContent`);
   ok('la dirección del servidor se ve', new RegExp(`^http://[\\d.]+:${PORT}$`).test(addr), addr);
   ok('el contador nace vacío y se llena sin destellar',
-    await js(`document.getElementById('n-in').textContent === '0' && !document.querySelector('.ub-bar .ox-ticked')`));
-  ok('las herramientas de la bandeja están escondidas', await js(`document.getElementById('out-tools').hidden`));
+    await js(`document.getElementById('n-in').textContent === '0' && !document.querySelector('.op-rail .op-ticked')`));
+  ok('las herramientas de la bandeja no están en Recibidas', await js(`!document.getElementById('btn-add') && !document.getElementById('btn-sweep')`));
+  ok('el encabezado dice qué vista es', (await js(`document.querySelector('#view .op-viewhead__title')?.textContent`)) === 'Recibidas');
   ok('el botón de purga está apagado y dice por qué',
     await js(`(() => { const b = document.getElementById('btn-nuke'); return b.disabled && b.dataset.tip === 'No hay nada que purgar'; })()`));
   ok(`la ventana tiene el color de los tokens (${BG_MAIN})`, win.getBackgroundColor().toLowerCase().startsWith(BG_MAIN), win.getBackgroundColor());
-  const seg = await js(`(() => { const s = document.getElementById('seg'); const o = s.querySelector('.is-active').getBoundingClientRect();
-    const x = parseFloat(getComputedStyle(s).getPropertyValue('--seg-x')); const w = parseFloat(getComputedStyle(s).getPropertyValue('--seg-w'));
-    const sr = s.getBoundingClientRect(); return { opt: o.left - sr.left, ow: o.width, x, w }; })()`);
-  ok('la cápsula del segmentado nace debajo de la opción activa', Math.abs(seg.opt - seg.x) < 1 && Math.abs(seg.ow - seg.w) < 1, JSON.stringify(seg));
 
   console.log('\n2. Una captura llega por la red');
   const drop = await request('POST', '/drop', PNG);
@@ -117,24 +117,25 @@ app.whenReady().then(async () => {
   await sleep(900);
   ok('aparece una tarjeta en la galería', (await cards()) === 1);
   ok('el contador sube a 1', (await js(`document.getElementById('n-in').textContent`)) === '1');
-  const toast = await rect('.ox-toast');
+  const toast = await rect('.op-toast');
   ok('el toast cae adentro de la ventana', dentro(toast), JSON.stringify(toast));
-  ok('y lleva la miniatura en vez del ícono', await js(`!!document.querySelector('.ox-toast .ub-toast-thumb')`));
+  ok('y lleva la miniatura en vez del ícono', await js(`!!document.querySelector('.op-toast .ub-toast-thumb')`));
   const card = await rect('#grid > .ub-card');
   ok('la tarjeta cae adentro de la vista', dentro(card), JSON.stringify(card));
+  ok('la tarjeta es relleno de luz, sin blur propio', await js(`getComputedStyle(document.querySelector('#grid > .ub-card')).backdropFilter === 'none'`));
   ok('la purga se enciende', await js(`!document.getElementById('btn-nuke').disabled`));
 
   console.log('\n3. Menú contextual y visor');
   await js(`(() => { const c = document.querySelector('#grid > .ub-card'); const r = c.getBoundingClientRect();
     c.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 20 })); })()`);
   await sleep(300);
-  const menu = await rect('.ox-menu');
+  const menu = await rect('.op-menu');
   ok('el menú abre adentro de la ventana', dentro(menu), JSON.stringify(menu));
   ok('nace en el cursor', !!menu && Math.abs(menu.x - (card.x + 20)) < 12 && Math.abs(menu.y - (card.y + 20)) < 12, JSON.stringify({ menu, card }));
-  ok('trae Copiar, Exportar y Eliminar', (await js(`[...document.querySelectorAll('.ox-menu .ox-menuitem')].map(b => b.textContent.trim()).join('|')`)) === 'Copiar|Exportar|Eliminar');
+  ok('trae Copiar, Exportar y Eliminar', (await js(`[...document.querySelectorAll('.op-menu .op-menuitem')].map(b => b.textContent.trim()).join('|')`)) === 'Copiar|Exportar|Eliminar');
   key('Escape');
   await sleep(400);
-  ok('Escape lo cierra', !(await js(`!!document.querySelector('.ox-menu')`)));
+  ok('Escape lo cierra', !(await js(`!!document.querySelector('.op-menu')`)));
 
   await tap('#grid > .ub-card');
   await sleep(450);
@@ -145,10 +146,10 @@ app.whenReady().then(async () => {
   ok('Escape cierra el visor (y sale animado del DOM)', !(await js(`!!document.querySelector('.ub-lightbox')`)));
 
   console.log('\n4. Para el celu');
-  await tap('.ox-segmented__opt[data-value="celu"]');
+  await tap('.op-navitem[data-view="celu"]');
   await sleep(600);
-  ok('el segmentado lleva a la bandeja vacía', await js(`!!document.querySelector('#view .ub-empty') && document.querySelector('.ox-segmented__opt.is-active').dataset.value === 'celu'`));
-  ok('las herramientas de la bandeja aparecen', !(await js(`document.getElementById('out-tools').hidden`)));
+  ok('el rail lleva a la bandeja vacía', await js(`!!document.querySelector('#view .ub-empty') && document.querySelector('.op-navitem.is-active').dataset.view === 'celu'`));
+  ok('las herramientas de la bandeja aparecen', await js(`!!document.getElementById('btn-add') && !!document.getElementById('btn-sweep')`));
   ok('barrer está apagado y dice por qué', await js(`(() => { const b = document.getElementById('btn-sweep'); return b.disabled && /ninguna bajó/.test(b.dataset.tip); })()`));
 
   const archivo = path.join(DIR, 'notas de prueba ñ.txt');
@@ -164,7 +165,7 @@ app.whenReady().then(async () => {
   ok('el celu lo baja', bajada.status === 200 && bajada.body.toString() === 'hola celu', String(bajada.status));
   await sleep(900);
   const pill = await js(`(() => { const c = document.querySelector('#grid .ub-card'); const p = c?.querySelector(':scope > .ub-pill');
-    const nuevo = p && [...p.childNodes].filter((n) => !(n.classList?.contains('ox-swap-out'))).map((n) => n.textContent).join('').trim();
+    const nuevo = p && [...p.childNodes].filter((n) => !(n.classList?.contains('op-swap-out'))).map((n) => n.textContent).join('').trim();
     return { clase: c?.classList.contains('is-delivered'), nuevo }; })()`);
   ok('la tarjeta pasa a bajada', pill.clase && pill.nuevo === 'Bajada', JSON.stringify(pill));
   ok('el contador se apaga y barrer se enciende',
@@ -178,7 +179,7 @@ app.whenReady().then(async () => {
   await sleep(400);
   const qr = await rect('.ub-qr');
   const btnQr = await rect('#btn-qr');
-  ok('el QR abre adentro de la ventana, debajo de su botón', dentro(qr) && qr.y >= btnQr.y + btnQr.h, JSON.stringify({ qr, btnQr }));
+  ok('el QR abre adentro de la ventana, arriba de su botón', dentro(qr) && qr.y + qr.h <= btnQr.y, JSON.stringify({ qr, btnQr }));
   ok('trae la imagen del código', await js(`!!document.querySelector('.ub-qr img[src^="data:image/png"]')`));
 
   // 0.4: la vinculación de la app del celu, de punta a punta por HTTP.
@@ -195,7 +196,7 @@ app.whenReady().then(async () => {
   const canje = await pedir(cod);
   ok('el celu canjea el código por la llave', canje.status === 200 && JSON.parse(canje.body).key === llave(), `${canje.status} ${canje.body}`);
   await sleep(800);
-  ok('la app avisa que se vinculó', await js(`[...document.querySelectorAll('.ox-toast')].some((t) => /Celu vinculado/.test(t.textContent))`));
+  ok('la app avisa que se vinculó', await js(`[...document.querySelectorAll('.op-toast')].some((t) => /Celu vinculado/.test(t.textContent))`));
   ok('…y el cartel vuelve al botón con la confirmación',
     await js(`!document.querySelector('.ub-qr .ub-pair__code') && /quedó vinculado/.test(document.querySelector('.ub-qr .ub-qr__pair').textContent)`));
 
@@ -208,21 +209,21 @@ app.whenReady().then(async () => {
   ok('…y el código que mostraba deja de servir', /^\d{6}$/.test(cod2) && (await pedir(cod2)).status === 409, cod2);
 
   console.log('\n6. Purga');
-  await tap('.ox-segmented__opt[data-value="recibidas"]');
+  await tap('.op-navitem[data-view="recibidas"]');
   await sleep(600);
   ok('volver a Recibidas muestra la captura', (await cards()) === 1);
   await tap('#btn-nuke');
   await sleep(500);
-  ok('pide confirmación con un modal propio', await js(`!!document.querySelector('.ox-modal')`));
+  ok('pide confirmación con un modal propio', await js(`!!document.querySelector('.op-modal')`));
   ok('el foco arranca en Cancelar', await js(`document.activeElement?.textContent.trim() === 'Cancelar'`));
-  const modal = await rect('.ox-modal');
+  const modal = await rect('.op-modal');
   ok('el modal cae adentro de la ventana', dentro(modal), JSON.stringify(modal));
   key('Escape');
   await sleep(500);
   ok('Escape cancela y la captura sigue', (await cards()) === 1 && fs.readdirSync(path.join(DIR, 'inbox')).length === 1);
   await tap('#btn-nuke');
   await sleep(500);
-  await tap('.ox-modal .ox-btn--danger-solid');
+  await tap('.op-modal .op-btn--danger-solid');
   await sleep(1200);
   ok('confirmar la borra de la galería y del disco', (await cards()) === 0 && fs.readdirSync(path.join(DIR, 'inbox')).length === 0);
   ok('y vuelve el vacío', await js(`!!document.querySelector('#view .ub-empty')`));
@@ -236,12 +237,12 @@ app.whenReady().then(async () => {
     && (await js(`document.querySelector('#grid .ub-card--file .ub-file__name')?.textContent`)) === 'Apunte de Tecnia ñ.pdf');
   ok('la ficha dice PDF', (await js(`document.querySelector('#grid .ub-file__ext')?.textContent`)) === 'PDF');
   ok('el toast dice «Archivo recibido», sin miniatura',
-    await js(`[...document.querySelectorAll('.ox-toast')].some((t) => /Archivo recibido/.test(t.textContent) && !t.querySelector('.ub-toast-thumb'))`));
+    await js(`[...document.querySelectorAll('.op-toast')].some((t) => /Archivo recibido/.test(t.textContent) && !t.querySelector('.ub-toast-thumb'))`));
   await js(`(() => { const c = document.querySelector('#grid > .ub-card'); const r = c.getBoundingClientRect();
     c.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 20 })); })()`);
   await sleep(300);
   ok('su menú trae Abrir, Copiar, Exportar y Eliminar',
-    (await js(`[...document.querySelectorAll('.ox-menu .ox-menuitem')].map(b => b.textContent.trim()).join('|')`)) === 'Abrir|Copiar|Exportar|Eliminar');
+    (await js(`[...document.querySelectorAll('.op-menu .op-menuitem')].map(b => b.textContent.trim()).join('|')`)) === 'Abrir|Copiar|Exportar|Eliminar');
   key('Escape');
   await sleep(400);
   await tap('#grid > .ub-card');
@@ -253,16 +254,16 @@ app.whenReady().then(async () => {
 
   console.log('\n6-bis. La tarjeta de actualización');
   // Lo que manda updater.js: el humo no busca en GitHub, le pasa los estados.
-  const estado = (s) => win.webContents.send('update:state', { current: '0.2.5', version: '0.3.0', name: 'Umbral 0.3.0 — entra a la familia Onyx', bytes: 104857600, pct: 0, manual: false, ...s });
+  const estado = (s) => win.webContents.send('update:state', { current: '0.2.5', version: '0.3.0', name: 'Umbral 0.3.0 — entra a la familia Opal', bytes: 104857600, pct: 0, manual: false, ...s });
   estado({ phase: 'available' });
   await sleep(500);
   const upd = await rect('.ub-upd');
-  ok('una versión nueva aparece abajo a la izquierda, adentro de la ventana', dentro(upd) && upd.x < 40, JSON.stringify(upd));
-  ok('dice qué trae y cuánto pesa', (await js(`document.querySelector('.ub-upd__sub').textContent`)) === 'Entra a la familia Onyx · 100 MB');
-  ok('con Descargar como primario', await js(`document.querySelector('.ub-upd .ox-btn--primary')?.textContent === 'Descargar'`));
+  ok('una versión nueva aparece abajo a la izquierda de la hoja, adentro de la ventana', dentro(upd) && upd.x > rail.x + rail.w && upd.x < rail.x + rail.w + 60, JSON.stringify({ upd, rail }));
+  ok('dice qué trae y cuánto pesa', (await js(`document.querySelector('.ub-upd__sub').textContent`)) === 'Entra a la familia Opal · 100 MB');
+  ok('con Descargar como primario', await js(`document.querySelector('.ub-upd .op-btn--primary')?.textContent === 'Descargar'`));
   estado({ phase: 'downloading', pct: 0.42 });
   await sleep(600);
-  ok('bajando lleva su barra', (await js(`getComputedStyle(document.querySelector('.ub-upd .ox-meter__fill')).getPropertyValue('--ox-pct').trim()`)) === '42.0%');
+  ok('bajando lleva su barra', (await js(`getComputedStyle(document.querySelector('.ub-upd .op-meter__fill')).getPropertyValue('--op-pct').trim()`)) === '42.0%');
   estado({ phase: 'downloading', pct: 0.5 });
   /* El número corre (roll) y no destella: con valor() destellaba en cada aviso
      y, con varios por segundo, el % se prendía y apagaba sin parar. */
@@ -273,7 +274,7 @@ app.whenReady().then(async () => {
     for (let i = 0; i < 12; i++) {
       await new Promise((r) => requestAnimationFrame(r));
       vistos.push(parseInt(sub.textContent, 10));
-      destello = destello || sub.classList.contains('ox-ticked');
+      destello = destello || sub.classList.contains('op-ticked');
     }
     return { vistos, destello };
   })()`);
@@ -284,7 +285,7 @@ app.whenReady().then(async () => {
     && (await js(`document.querySelectorAll('.ub-upd').length`)) === 1);
   estado({ phase: 'ready' });
   await sleep(600);
-  ok('lista: ofrece reiniciar', await js(`[...document.querySelectorAll('.ub-upd .ox-btn')].some(b => b.textContent === 'Reiniciar')`));
+  ok('lista: ofrece reiniciar', await js(`[...document.querySelectorAll('.ub-upd .op-btn')].some(b => b.textContent === 'Reiniciar')`));
   await tap('.ub-upd [data-upd="close"]');
   await sleep(500);
   ok('la cruz la cierra', !(await js(`!!document.querySelector('.ub-upd')`)));
@@ -303,7 +304,7 @@ app.whenReady().then(async () => {
   ok('cero title= nativo', (await js(`document.querySelectorAll('[title]').length`)) === 0);
   /* Ningún botón de solo ícono con el SVG corrido o desbordando (el padding
      de fábrica de Chromium; ver «Un botón nuevo declara SU padding»). */
-  const corridos = await js(`[...document.querySelectorAll('.ox-iconbtn, .ox-wincontrol')].map((b) => {
+  const corridos = await js(`[...document.querySelectorAll('.op-iconbtn, .op-wincontrol')].map((b) => {
     const s = b.querySelector('svg'); if (!s) return null; const a = b.getBoundingClientRect(); const r = s.getBoundingClientRect();
     if (a.width < 2) return null;
     const dx = Math.abs((r.left + r.width / 2) - (a.left + a.width / 2)); const dy = Math.abs((r.top + r.height / 2) - (a.top + a.height / 2));
@@ -381,7 +382,7 @@ app.whenReady().then(async () => {
       if (lados.length) { out.push(name(el) + '  ← ' + bx.who + '  [' + lados.join(', ') + ']'); break; }
     }
   }
-  document.querySelectorAll('.ox-scroll, .ox-main, [class*="scroll"]').forEach((s) => { s.scrollTop = 0; s.scrollLeft = 0; });
+  document.querySelectorAll('.op-scroll, .op-main, [class*="scroll"]').forEach((s) => { s.scrollTop = 0; s.scrollLeft = 0; });
   return out;
 })(document)`;
   win.focus();
@@ -392,57 +393,58 @@ app.whenReady().then(async () => {
   await sleep(900);
 
   // Antes de la auditoría de anillos, que apaga las transiciones para medir.
-  console.log('\n7-bis. Borrador');
-  await tap('.ox-segmented__opt[data-value="borrador"]');
+  console.log('\n7-bis. Notepad');
+  await tap('.op-navitem[data-view="notepad"]');
   await sleep(700);
   const b0 = await js(`(() => {
-    const ta = document.getElementById('borr'), r = ta.getBoundingClientRect();
-    const seg = document.getElementById('seg').getBoundingClientRect();
-    const foot = document.querySelector('.ub-borr__foot').getBoundingClientRect();
-    return { focus: document.activeElement === ta, h: r.height, left: r.left, seg: seg.left, right: innerWidth - r.right,
-      footBottom: innerHeight - foot.bottom, copyOff: document.getElementById('borr-copy').disabled,
-      sizeHidden: document.getElementById('size-tools').hidden, nukeHidden: document.getElementById('nuke-tools').hidden,
+    const ta = document.getElementById('note'), r = ta.getBoundingClientRect();
+    const titulo = document.querySelector('#view .op-viewhead__title').getBoundingClientRect();
+    const hoja = document.getElementById('view').getBoundingClientRect();
+    const foot = document.querySelector('.ub-note__foot').getBoundingClientRect();
+    return { focus: document.activeElement === ta, h: r.height, left: r.left - hoja.left, seg: titulo.left - hoja.left, right: hoja.right - r.right,
+      footBottom: hoja.bottom - foot.bottom, copyOff: document.getElementById('note-copy').disabled,
+      sizeHidden: !document.getElementById('thumb-size'), nukeHidden: !document.getElementById('btn-nuke'),
       folderTip: document.getElementById('btn-folder').dataset.tip,
-      info: document.getElementById('borr-info').textContent };
+      info: document.getElementById('note-info').textContent };
   })()`);
   ok('el campo tiene el foco al entrar', b0.focus);
   ok('el campo llena la vista (alto > 400 px)', b0.h > 400, `alto ${b0.h}`);
-  ok('arranca en la misma columna que el segmentado', Math.abs(b0.left - b0.seg) < 1, `${b0.left} vs ${b0.seg}`);
+  ok('arranca en la misma columna que su título', Math.abs(b0.left - b0.seg) < 1, `${b0.left} vs ${b0.seg}`);
   ok('la sangría derecha es la misma que la izquierda', Math.abs(b0.right - b0.left) < 1, `${b0.right} vs ${b0.left}`);
-  ok('el pie queda dentro de la ventana', b0.footBottom >= 8, `${b0.footBottom} px`);
-  ok('vacío: Copiar todo apagado y dice que se ve en el celu', b0.copyOff && /Umbral Mobile/.test(b0.info), b0.info);
-  ok('miniaturas y purga plegadas', b0.sizeHidden && b0.nukeHidden);
-  ok('la carpeta queda, para mostrar el .txt', /borrador\.txt/.test(b0.folderTip), b0.folderTip);
-  const fondo = () => js(`getComputedStyle(document.getElementById('borr')).backgroundColor`);
+  ok('el pie queda dentro de la hoja', b0.footBottom >= 8, `${b0.footBottom} px`);
+  ok('vacío: Copiar todo apagado y dice que lo ven el celu y CC', b0.copyOff && /el celu y CC/.test(b0.info), b0.info);
+  ok('sin miniaturas ni purga', b0.sizeHidden && b0.nukeHidden);
+  ok('la carpeta queda, para mostrar el .txt', /notepad\.txt/.test(b0.folderTip), b0.folderTip);
+  const fondo = () => js(`getComputedStyle(document.getElementById('note')).backgroundColor`);
   const conFoco = await fondo();
-  await js(`document.getElementById('borr').blur()`);
+  await js(`document.getElementById('note').blur()`);
   await sleep(400);
   const sinFoco = await fondo();
   ok('el fondo es el mismo con foco y sin foco', conFoco === sinFoco, `${conFoco} vs ${sinFoco}`);
-  await js(`document.getElementById('borr').focus()`);
+  await js(`document.getElementById('note').focus()`);
 
   const TXT = 'git push origin main\nhttps://ejemplo.com/ñandú';
-  await js(`(() => { const ta = document.getElementById('borr'); ta.value = ${JSON.stringify(TXT)};
+  await js(`(() => { const ta = document.getElementById('note'); ta.value = ${JSON.stringify(TXT)};
     ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await sleep(450);
-  const info = await js(`document.getElementById('borr-info').textContent`);
+  const info = await js(`document.getElementById('note-info').textContent`);
   ok('cuenta caracteres y líneas', /2 líneas/.test(info), info);
   // Una tecla más: el conteo cambia en su lugar, sin destello.
-  await js(`(() => { const ta = document.getElementById('borr'); ta.value += '!';
+  await js(`(() => { const ta = document.getElementById('note'); ta.value += '!';
     ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await sleep(60);
-  const tecla = await js(`(() => { const el = document.getElementById('borr-info');
-    return { ticked: el.classList.contains('ox-ticked'), info: el.textContent }; })()`);
+  const tecla = await js(`(() => { const el = document.getElementById('note-info');
+    return { ticked: el.classList.contains('op-ticked'), info: el.textContent }; })()`);
   ok('el conteo cambia sin destellar', !tecla.ticked && /2 líneas/.test(tecla.info), JSON.stringify(tecla));
-  await js(`(() => { const ta = document.getElementById('borr'); ta.value = ${JSON.stringify(TXT)};
+  await js(`(() => { const ta = document.getElementById('note'); ta.value = ${JSON.stringify(TXT)};
     ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await sleep(450);
 
-  // El cursor de bloque: violeta con aureola, parado sobre la letra que tapa.
+  // El cursor de bloque: de luz con aureola, parado sobre la letra que tapa.
   const cursorEn = async (a, b = a) => {
-    await js(`document.getElementById('borr').setSelectionRange(${a}, ${b})`);
+    await js(`document.getElementById('note').setSelectionRange(${a}, ${b})`);
     await sleep(120);
-    return js(`(() => { const ta = document.getElementById('borr'), c = document.querySelector('.ub-cursor');
+    return js(`(() => { const ta = document.getElementById('note'), c = document.querySelector('.ub-cursor');
       const r = c.getBoundingClientRect(), t = ta.getBoundingClientRect(), antes = getComputedStyle(c, '::before');
       return { caret: getComputedStyle(ta).caretColor, x: r.left - t.left, y: r.top - t.top, w: r.width,
         letra: c.textContent, oculto: c.classList.contains('is-oculto'), quieto: c.classList.contains('is-quieto'),
@@ -453,7 +455,7 @@ app.whenReady().then(async () => {
   ok('el cursor nativo es transparente', /rgba\(0, 0, 0, 0\)|transparent/.test(c0.caret), c0.caret);
   ok('el bloque arranca sobre la primera letra', c0.letra === 'g' && !c0.oculto && Math.abs(c0.x - c0.pad) < 1, JSON.stringify(c0));
   ok('parpadea con foco', c0.late && !c0.quieto, JSON.stringify(c0));
-  ok('es violeta y con aureola', /157, 123, 255/.test(c0.fondo) && /157, 123, 255.*7px|7px.*157, 123, 255/.test(c0.sombra), `${c0.fondo} · ${c0.sombra}`);
+  ok('es de luz y con aureola', /240, 243, 247/.test(c0.fondo) && /240, 243, 247.*7px|7px.*240, 243, 247/.test(c0.sombra), `${c0.fondo} · ${c0.sombra}`);
   const c4 = await cursorEn(4);
   ok('cuatro letras más allá, cuatro anchos más allá', c4.letra === 'p' && Math.abs(c4.x - (c0.x + 4 * c0.w)) < 1.5, `${c4.x} vs ${c0.x + 4 * c0.w}`);
   const c21 = await cursorEn(21);
@@ -462,21 +464,21 @@ app.whenReady().then(async () => {
   ok('al final no tapa ninguna letra', cFin.letra === '' && !cFin.oculto, JSON.stringify(cFin));
   const cSel = await cursorEn(0, 5);
   ok('con una selección el bloque se esconde', cSel.oculto);
-  await js(`document.getElementById('borr').blur()`);
+  await js(`document.getElementById('note').blur()`);
   await sleep(120);
   const cBlur = await js(`document.querySelector('.ub-cursor').className`);
   ok('sin foco queda quieto', /is-quieto/.test(cBlur), cBlur);
-  await js(`(() => { const ta = document.getElementById('borr'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); })()`);
+  await js(`(() => { const ta = document.getElementById('note'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); })()`);
 
   // Los números de línea: uno por renglón escrito, a la altura de su renglón.
   const numeros = async (texto, pos) => {
     if (texto !== undefined) {
-      await js(`(() => { const ta = document.getElementById('borr'); ta.value = ${JSON.stringify(texto)};
+      await js(`(() => { const ta = document.getElementById('note'); ta.value = ${JSON.stringify(texto)};
         ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     }
-    if (pos !== undefined) await js(`document.getElementById('borr').setSelectionRange(${pos}, ${pos})`);
+    if (pos !== undefined) await js(`document.getElementById('note').setSelectionRange(${pos}, ${pos})`);
     await sleep(150);
-    return js(`(() => { const ta = document.getElementById('borr'), t = ta.getBoundingClientRect();
+    return js(`(() => { const ta = document.getElementById('note'), t = ta.getBoundingClientRect();
       const ns = [...document.querySelectorAll('.ub-lineas__n')];
       const col = document.querySelector('.ub-lineas').getBoundingClientRect();
       return { n: ns.map((e) => e.textContent), y: ns.map((e) => e.getBoundingClientRect().top - t.top),
@@ -494,41 +496,41 @@ app.whenReady().then(async () => {
   ok('el actual sigue al cursor', n1.actual === 0, String(n1.actual));
   const n2 = await numeros(Array.from({ length: 120 }, (_, i) => `l${i}`).join('\n'), 0);
   ok('con 100 renglones o más, la columna se ensancha', n2.n.length === 120 && n2.pad > n0.pad && n2.colDer < n2.pad, `${n2.pad} vs ${n0.pad}`);
-  await js(`document.getElementById('borr').scrollTop = 200`);
+  await js(`document.getElementById('note').scrollTop = 200`);
   await sleep(100);
   const n3 = await numeros();
   ok('los números acompañan el scroll', Math.abs((n2.y[0] - n3.y[0]) - 200) < 1, `${n2.y[0]} → ${n3.y[0]}`);
   await numeros(TXT, TXT.length);
 
-  await tap('#borr-copy');
+  await tap('#note-copy');
   await sleep(250);
   ok('Copiar todo manda el texto entero', global.__umbralCopiado === TXT, JSON.stringify(global.__umbralCopiado));
 
-  await tap('.ox-segmented__opt[data-value="celu"]');
+  await tap('.op-navitem[data-view="celu"]');
   await sleep(600);
-  await tap('.ox-segmented__opt[data-value="borrador"]');
+  await tap('.op-navitem[data-view="notepad"]');
   await sleep(600);
-  ok('el texto sobrevive a cambiar de vista', (await js(`document.getElementById('borr').value`)) === TXT);
+  ok('el texto sobrevive a cambiar de vista', (await js(`document.getElementById('note').value`)) === TXT);
 
-  await tap('#borr-clear');
+  await tap('#note-clear');
   await sleep(70);
-  const medio = await js(`(() => { const ta = document.getElementById('borr');
+  const medio = await js(`(() => { const ta = document.getElementById('note');
     return { limpiando: ta.classList.contains('is-limpiando'), alfa: getComputedStyle(ta).color }; })()`);
   ok('al limpiar, el texto se funde (a mitad de camino no es ni opaco ni invisible)',
     medio.limpiando && /\/ 0\.\d|, 0\.\d+\)/.test(medio.alfa), medio.alfa);
   await sleep(700);   // con la máquina cargada, el temporizador de 180 ms llega tarde
-  ok('Limpiar deja el campo vacío', (await js(`document.getElementById('borr').value`)) === '');
-  ok('el toast trae Deshacer', await tap('.ox-toast__action'));
+  ok('Limpiar deja el campo vacío', (await js(`document.getElementById('note').value`)) === '');
+  ok('el toast trae Deshacer', await tap('.op-toast__action'));
   await sleep(300);
-  ok('Deshacer devuelve el texto', (await js(`document.getElementById('borr').value`)) === TXT);
+  ok('Deshacer devuelve el texto', (await js(`document.getElementById('note').value`)) === TXT);
 
   // La letra: Ctrl + / Ctrl - / Ctrl 0, sin tocar el zoom de la ventana.
   const ctrl = (keyCode) => {
     win.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers: ['control'] });
     win.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers: ['control'] });
   };
-  const letra = () => js(`(() => { const ta = document.getElementById('borr');
-    return { fs: getComputedStyle(ta).fontSize, info: document.getElementById('borr-info').textContent }; })()`);
+  const letra = () => js(`(() => { const ta = document.getElementById('note');
+    return { fs: getComputedStyle(ta).fontSize, info: document.getElementById('note-info').textContent }; })()`);
   ok('la letra arranca en 12 px', (await letra()).fs === '12px', (await letra()).fs);
   ctrl('Plus'); ctrl('Plus'); ctrl('Plus');
   await sleep(400);
@@ -540,7 +542,7 @@ app.whenReady().then(async () => {
   await sleep(500);
   ok('Ctrl - achica', (await letra()).fs === '14px', (await letra()).fs);
   let guardada = null;
-  for (let i = 0; i < 20 && guardada !== 14; i++) { await sleep(100); guardada = (await js(`window.onyx.settings.get()`)).borradorLetra; }
+  for (let i = 0; i < 20 && guardada !== 14; i++) { await sleep(100); guardada = (await js(`window.opal.settings.get()`)).notepadLetra; }
   ok('queda guardada para la próxima', guardada === 14, String(guardada));
   await sleep(1800);
   ok('después vuelve el conteo', /2 líneas/.test((await letra()).info), (await letra()).info);
@@ -550,8 +552,8 @@ app.whenReady().then(async () => {
   ok('la ventana sigue sin zoom', win.webContents.getZoomLevel() === 0, String(win.webContents.getZoomLevel()));
 
   // Ctrl+K corta el renglón, como en nano; seguidos se juntan, y Ctrl+Z lo deshace.
-  const valor = () => js(`document.getElementById('borr').value`);
-  await js(`(() => { const ta = document.getElementById('borr'); ta.focus(); ta.value = 'uno\\ndos\\ntres';
+  const valor = () => js(`document.getElementById('note').value`);
+  await js(`(() => { const ta = document.getElementById('note'); ta.focus(); ta.value = 'uno\\ndos\\ntres';
     ta.dispatchEvent(new Event('input', { bubbles: true })); ta.setSelectionRange(5, 5); })()`);
   await sleep(100);
   ctrl('K');
@@ -562,17 +564,17 @@ app.whenReady().then(async () => {
   await sleep(150);
   ok('el último renglón se lleva el salto de antes', (await valor()) === 'uno', JSON.stringify(await valor()));
   ok('dos Ctrl+K seguidos se juntan', global.__umbralCopiado === 'dos\ntres\n', JSON.stringify(global.__umbralCopiado));
-  ok('abajo dice cuántas', /2 líneas cortadas/.test(await js(`document.getElementById('borr-info').textContent`)));
+  ok('abajo dice cuántas', /2 líneas cortadas/.test(await js(`document.getElementById('note-info').textContent`)));
   ctrl('Z');
   await sleep(150);
   ok('Ctrl+Z la devuelve', (await valor()) === 'uno\ntres', JSON.stringify(await valor()));
-  await js(`(() => { const ta = document.getElementById('borr'); ta.setSelectionRange(1, 6); })()`);
+  await js(`(() => { const ta = document.getElementById('note'); ta.setSelectionRange(1, 6); })()`);
   ctrl('K');
   await sleep(150);
   ok('con una selección corta todos los renglones que toca', (await valor()) === '' && global.__umbralCopiado === 'uno\ntres\n', JSON.stringify(global.__umbralCopiado));
   // Ctrl+F: busca sin mayúsculas ni tildes, marca la actual, Enter sigue y Esc la deja seleccionada.
   const BUSCA = 'Canción uno\nla cancion dos\notra CANCIÓN\n' + Array.from({ length: 80 }, (_, i) => `relleno ${i}`).join('\n') + '\nla última canción';
-  await js(`(() => { const ta = document.getElementById('borr'); ta.focus(); ta.value = ${JSON.stringify(BUSCA)};
+  await js(`(() => { const ta = document.getElementById('note'); ta.focus(); ta.value = ${JSON.stringify(BUSCA)};
     ta.dispatchEvent(new Event('input', { bubbles: true })); ta.setSelectionRange(0, 0); ta.scrollTop = 0; })()`);
   await sleep(150);
   ctrl('F');
@@ -585,9 +587,9 @@ app.whenReady().then(async () => {
     const tira = document.querySelector('.ub-hallazgos__tira:not([data-state="closing"])');
     const ms = tira ? [...tira.querySelectorAll('.ub-hallazgo')] : [];
     const act = ms.find((m) => m.classList.contains('is-actual'));
-    const ta = document.getElementById('borr');
+    const ta = document.getElementById('note');
     return { abierta: !!b, foco: document.activeElement?.className || '',
-      n: b ? [...b.querySelectorAll('.ub-buscar__n > :not(.ox-swap-out)')].map((e) => e.textContent).join('') || b.querySelector('.ub-buscar__n').textContent : '',
+      n: b ? [...b.querySelectorAll('.ub-buscar__n > :not(.op-swap-out)')].map((e) => e.textContent).join('') || b.querySelector('.ub-buscar__n').textContent : '',
       marcas: ms.map((m) => m.textContent), actual: ms.indexOf(act), scroll: ta.scrollTop,
       actualY: act ? act.getBoundingClientRect().top - ta.getBoundingClientRect().top : null, alto: ta.clientHeight,
       tinta: act ? getComputedStyle(act).backgroundColor : '' }; })()`);
@@ -602,9 +604,9 @@ app.whenReady().then(async () => {
   f = await buscando();
   ok('encuentra sin mayúsculas ni tildes', f.marcas.join('|') === 'Canción|cancion|CANCIÓN|canción', f.marcas.join('|'));
   ok('la actual es la primera desde el cursor', f.actual === 0 && f.n === '1 de 4', `${f.actual} · ${f.n}`);
-  ok('la actual va en violeta entero', /157, 123, 255/.test(f.tinta) && !/, 0\.\d/.test(f.tinta), f.tinta);
+  ok('la actual va en luz entera', /240, 243, 247/.test(f.tinta) && !/, 0\.\d/.test(f.tinta), f.tinta);
   // La marca cae sobre su palabra: la segunda («cancion» de «la cancion») empieza 3 letras adentro del renglón 2.
-  const geo = await js(`(() => { const ta = document.getElementById('borr'), t = ta.getBoundingClientRect(), cs = getComputedStyle(ta);
+  const geo = await js(`(() => { const ta = document.getElementById('note'), t = ta.getBoundingClientRect(), cs = getComputedStyle(ta);
     const ms = [...document.querySelectorAll('.ub-hallazgos__tira:not([data-state]) .ub-hallazgo')].map((m) => m.getBoundingClientRect());
     return { x0: ms[0].left - t.left, x1: ms[1].left - t.left, y0: ms[0].top - t.top, y1: ms[1].top - t.top,
       pad: parseFloat(cs.paddingLeft), lh: parseFloat(cs.lineHeight), w: ms[0].width / 7 }; })()`);
@@ -636,7 +638,7 @@ app.whenReady().then(async () => {
   await js(`document.querySelector('.ub-buscar__q').focus()`);
   pulsar('Escape');
   await sleep(400);
-  const cerrada = await js(`(() => { const ta = document.getElementById('borr');
+  const cerrada = await js(`(() => { const ta = document.getElementById('note');
     return { barra: !!document.querySelector('.ub-buscar'), marcas: document.querySelectorAll('.ub-hallazgo').length,
       foco: document.activeElement === ta, sel: ta.value.slice(ta.selectionStart, ta.selectionEnd) }; })()`);
   ok('Esc cierra la barra y se lleva las marcas', !cerrada.barra && cerrada.marcas === 0, JSON.stringify(cerrada));
@@ -645,7 +647,7 @@ app.whenReady().then(async () => {
   await sleep(300);
   ok('al abrir de nuevo, busca lo seleccionado', (await js(`document.querySelector('.ub-buscar__q').value`)) === 'dos');
   // Con la barra abierta, lo que se escribe en el campo mueve las marcas.
-  await js(`(() => { const ta = document.getElementById('borr'); ta.value = 'dos ' + ta.value;
+  await js(`(() => { const ta = document.getElementById('note'); ta.value = 'dos ' + ta.value;
     ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await sleep(200);
   ok('lo escrito en el campo se busca en vivo', (await buscando()).marcas.length === 2);
@@ -653,48 +655,70 @@ app.whenReady().then(async () => {
   await sleep(400);
   ok('la cruz también cierra', !(await js(`!!document.querySelector('.ub-buscar')`)));
 
-  await js(`(() => { const ta = document.getElementById('borr'); ta.value = ${JSON.stringify(TXT)};
+  await js(`(() => { const ta = document.getElementById('note'); ta.value = ${JSON.stringify(TXT)};
     ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await sleep(1800);   // que se vaya el aviso del Ctrl+K
 
   // El .txt y el celu: lo de acá llega al disco y al servidor; lo del celu, al campo.
-  const TXTF = path.join(DIR, 'borrador.txt');
+  const TXTF = path.join(DIR, 'notepad.txt');
   let enDisco = '';
   for (let i = 0; i < 30 && enDisco !== TXT; i++) { await sleep(100); try { enDisco = fs.readFileSync(TXTF, 'utf8'); } catch { /* todavía no */ } }
-  ok('lo escrito queda en borrador.txt', enDisco === TXT, JSON.stringify(enDisco));
-  const g = JSON.parse((await request('GET', '/borrador')).body.toString('utf8'));
-  ok('el celu lo lee por GET /borrador', g.text === TXT, JSON.stringify(g));
-  await js(`(() => { const ta = document.getElementById('borr'); ta.focus(); ta.setSelectionRange(3, 3); })()`);
+  ok('lo escrito queda en notepad.txt', enDisco === TXT, JSON.stringify(enDisco));
+  const g = JSON.parse((await request('GET', '/notepad')).body.toString('utf8'));
+  ok('el celu lo lee por GET /notepad', g.text === TXT, JSON.stringify(g));
+  await js(`(() => { const ta = document.getElementById('note'); ta.focus(); ta.setSelectionRange(3, 3); })()`);
   const DEL_CELU = 'ok ' + TXT;
-  const put = await request('PUT', '/borrador', Buffer.from(JSON.stringify({ text: DEL_CELU, base: g.hash })), { type: 'application/json' });
+  const put = await request('PUT', '/notepad', Buffer.from(JSON.stringify({ text: DEL_CELU, base: g.hash })), { type: 'application/json' });
   ok('PUT del celu con la versión actual: 200', put.status === 200, String(put.status));
   await sleep(250);
-  const r1 = await js(`(() => { const ta = document.getElementById('borr');
-    return { v: ta.value, sel: ta.selectionStart, remoto: ta.classList.contains('is-remoto'), info: document.getElementById('borr-info').textContent }; })()`);
+  const r1 = await js(`(() => { const ta = document.getElementById('note');
+    return { v: ta.value, sel: ta.selectionStart, remoto: ta.classList.contains('is-remoto'), info: document.getElementById('note-info').textContent }; })()`);
   ok('lo del celu entra en el campo sin tocar nada', r1.v === DEL_CELU, JSON.stringify(r1.v));
   ok('el cursor se corre con el texto que se agregó antes', r1.sel === 6, `cursor en ${r1.sel}`);
   ok('el canto avisa que vino de afuera', r1.remoto);
   ok('y abajo dice desde dónde', /desde el celu/.test(r1.info), r1.info);
-  const vieja = await request('PUT', '/borrador', Buffer.from(JSON.stringify({ text: 'pisado', base: g.hash })), { type: 'application/json' });
-  ok('PUT con una versión vieja: 409 y no pisa', vieja.status === 409 && (await js(`document.getElementById('borr').value`)) === DEL_CELU, String(vieja.status));
+  const vieja = await request('PUT', '/notepad', Buffer.from(JSON.stringify({ text: 'pisado', base: g.hash })), { type: 'application/json' });
+  ok('PUT con una versión vieja: 409 y no pisa', vieja.status === 409 && (await js(`document.getElementById('note').value`)) === DEL_CELU, String(vieja.status));
 
-  for (const v of ['recibidas', 'celu', 'borrador']) {
-    await tap(`.ox-segmented__opt[data-value="${v}"]`);
+  // CC escribe con el mod: el .txt y, al lado, la marca con su hash. Antes,
+  // que termine de guardarse lo del celu (400 ms): un guardado pendiente
+  // escribe encima, y el mod lo detecta (ver S:\tools\Notepad).
+  await sleep(700);
+  const { hashOf, CC_MARK } = require(path.join(ROOT, 'notepad.js'));
+  const DE_CC = 'nota de CC\n' + DEL_CELU;
+  fs.writeFileSync(path.join(DIR, CC_MARK), hashOf(DE_CC));
+  fs.writeFileSync(TXTF, DE_CC);
+  let rcc = null;
+  for (let i = 0; i < 40 && rcc?.v !== DE_CC; i++) {
+    await sleep(100);
+    rcc = await js(`(() => ({ v: document.getElementById('note').value, info: document.getElementById('note-info').textContent }))()`);
+  }
+  ok('lo que escribe CC entra en el campo', rcc?.v === DE_CC, JSON.stringify(rcc));
+  ok('y abajo dice que fue CC', /desde CC/.test(rcc?.info), rcc?.info);
+
+  for (const v of ['recibidas', 'celu', 'notepad']) {
+    await tap(`.op-navitem[data-view="${v}"]`);
     await sleep(700);
     const cortes = await js(AUDITAR_ANILLOS);
     ok(`${v}: ningún anillo de foco se corta ni roza un canto`, cortes.length === 0, '\n      ' + cortes.join('\n      '));
   }
 
-  // Ctrl 1, 2 y 3: cada pestaña, también con el foco adentro del Borrador.
-  for (const [tecla, v] of [['1', 'recibidas'], ['2', 'celu'], ['3', 'borrador'], ['2', 'celu'], ['1', 'recibidas']]) {
+  // Ctrl 1, 2 y 3: cada vista, también con el foco adentro del Notepad.
+  for (const [tecla, v] of [['1', 'recibidas'], ['2', 'celu'], ['3', 'notepad'], ['2', 'celu'], ['1', 'recibidas']]) {
     ctrl(tecla);
     await sleep(600);
-    const vista = await js(`document.querySelector('.ox-segmented__opt.is-active')?.dataset.value`);
+    const vista = await js(`document.querySelector('.op-navitem.is-active')?.dataset.view`);
     ok(`Ctrl ${tecla} va a ${v}`, vista === v, String(vista));
   }
   ctrl('4');
   await sleep(300);
-  ok('Ctrl 4 no hace nada', (await js(`document.querySelector('.ox-segmented__opt.is-active')?.dataset.value`)) === 'recibidas');
+  ok('Ctrl 4 no hace nada', (await js(`document.querySelector('.op-navitem.is-active')?.dataset.view`)) === 'recibidas');
+
+  // /notepad del mod corre `Umbral.exe --notepad`: la ventana va al Notepad.
+  app.emit('second-instance', {}, ['umbral.exe', '--notepad']);
+  await sleep(700);
+  ok('--notepad abre la vista del Notepad', (await js(`document.querySelector('.op-navitem.is-active')?.dataset.view`)) === 'notepad');
+  ok('…con el foco en el campo', await js(`document.activeElement?.id === 'note'`));
 
   console.log('\n8. Consola');
   ok('sin errores ni advertencias del renderer', errores.length === 0, '\n      ' + errores.join('\n      '));

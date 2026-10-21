@@ -1,31 +1,31 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   ONYX — base
+   OPAL — base
    Reset, tipografía y el reemplazo de TODO lo nativo de Chromium:
    scrollbar, selección, focus ring. Nada acá delata que adentro hay un browser.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 *, *::before, *::after { box-sizing: border-box; }
 
-/* `--ox-surface` es «la superficie sobre la que estoy». La declara cada plano
-   que aloja contenido —acá la base; y la card, el inspector y el modal— en el
-   mismo renglón donde pinta su fondo, y pinta CON ella, así las dos no se pueden
-   desencontrar. La lee lo que necesita ser opaco del color de su entorno sin
-   saber dónde cayó: el encabezado sticky de una tabla, que sobre la vista es
-   --ox-bg y dentro de una card es --ox-s2. */
+/* La interfaz es oscura, y lo dice. Lo que Chromium dibuja por su cuenta (el
+   calendario de un campo de fecha, el selector de color, las sugerencias de
+   un campo) sale oscuro y no con el blanco de fábrica. Y si se prende el
+   oscurecido a la fuerza de Chromium (--blink-settings=forceDarkModeEnabled),
+   esta página queda afuera: ya es oscura y no hay nada que invertir. */
+:root { color-scheme: dark; }
+
 html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  --ox-surface: var(--ox-bg);
-  background: var(--ox-surface);
+  background: var(--op-bg);
 }
 
 body {
-  font-family: var(--ox-font);
-  font-size: var(--ox-fs-13);
-  line-height: var(--ox-lh);
-  font-weight: var(--ox-w-regular);
-  color: var(--ox-text);
+  font-family: var(--op-font);
+  font-size: var(--op-fs-13);
+  line-height: var(--op-lh);
+  font-weight: var(--op-w-regular);
+  color: var(--op-text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   font-feature-settings: 'cv05' 1, 'ss03' 1;   /* Inter: l con cola, a de un piso */
@@ -40,23 +40,18 @@ button, input, textarea, select { font: inherit; color: inherit; }
 
 /* ── El padding de fábrica del <button> ──────────────────────────────────────
    Chromium le da `padding: 1px 6px` a todo botón, y con `box-sizing: border-box`
-   eso se come el INTERIOR de los controles chicos. En `.ox-check` —15px de
+   eso se come el INTERIOR de los controles chicos. En `.op-check` —15px de
    caja— dejaba una caja de contenido de 3px para un ícono de 11: el ícono
    desbordaba, y cuando un ítem de grid desborda su área el centrado cae a
    `start`. Resultado: el tilde arrancaba 4px a la derecha y se salía del cuadro.
-   El `.ox-iconbtn` tenía el mismo defecto, más chico (1,5px) y por eso invisible
+   El `.op-iconbtn` tenía el mismo defecto, más chico (1,5px) y por eso invisible
    de a uno, pero repetido en la titlebar, el rail y cada fila.
 
    Se resetea acá y no control por control porque el sistema no puede heredar
-   métricas del navegador: cada componente declara las suyas —`.ox-btn`,
-   `.ox-select`, `.ox-tab`, `.ox-navitem` ya lo hacían— y el que no declara nada
-   tiene que quedar en cero, no en lo que opine el UA.
-
-   El borde va en el mismo reset: el UA le pone a todo <button> un `outset` de
-   2px —claro arriba-izquierda, oscuro abajo-derecha— que sobrevive aunque el
-   componente declare fondo y hairline. Toda tarjeta o tecla hecha con <button>
-   salía biselada sin que ninguna regla propia lo dijera. */
-button { padding: 0; border: 0; }
+   métricas del navegador: cada componente declara las suyas —`.op-btn`,
+   `.op-select`, `.op-tab`, `.op-navitem` ya lo hacían— y el que no declara nada
+   tiene que quedar en cero, no en lo que opine el UA. */
+button { padding: 0; }
 img, svg { display: block; }
 a { color: inherit; text-decoration: none; }
 
@@ -64,9 +59,9 @@ a { color: inherit; text-decoration: none; }
    Todo lo que Fran podría querer llevarse al portapapeles se selecciona.
    Bloquearlo es hostil, y `user-select:none` global es el anti-patrón clásico
    de Electron. La regla: chrome no, contenido sí. */
-.ox-copyable,
-.ox-mono,
-.ox-log,
+.op-copyable,
+.op-mono,
+.op-log,
 p, code, pre,
 [data-copyable] {
   user-select: text;
@@ -74,166 +69,118 @@ p, code, pre,
 }
 
 ::selection {
-  background: var(--ox-select);
-  color: var(--ox-text);
-}
-/* Texto oscuro sobre una superficie clara (ver --ox-select-claro): el velo
-   oscurece, y la letra se queda con su color. Con el de arriba la tinta se
-   volvía casi blanca sobre el papel y lo seleccionado desaparecía.
-   `currentColor` y no `inherit`: en un ::selection, inherit hereda del
-   ::selection del padre —el de arriba, claro— y la letra se aclaraba igual
-   (medido: 216 en vez de 17 sobre papel blanco). */
-.ox-sobre-claro ::selection,
-.ox-sobre-claro::selection {
-  background: var(--ox-select-claro);
-  color: currentColor;
+  background: var(--op-select);
+  color: var(--op-text);
 }
 
 /* ── Scrollbar propia ────────────────────────────────────────────────────────
    Fina, sin flechas, y el thumb se materializa con el hover del contenedor.
    Nunca la gris de Windows. */
-::-webkit-scrollbar { width: 10px; height: 10px; }   /* = --ox-sb de .ox-scroll */
+::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-corner { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: transparent;
   border: 3px solid transparent;
-  border-radius: var(--ox-r-pill);
+  border-radius: var(--op-r-pill);
   background-clip: padding-box;
-  transition: background-color var(--ox-t-3) var(--ox-ease-soft);
+  transition: background-color var(--op-t-3) var(--op-ease-soft);
 }
 *:hover::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, .10); }
 ::-webkit-scrollbar-thumb:hover  { background-color: rgba(255, 255, 255, .20); }
 ::-webkit-scrollbar-thumb:active { background-color: rgba(255, 255, 255, .28); }
 
 /* ── Focus ring propio ───────────────────────────────────────────────────────
-   Solo con teclado (:focus-visible), nunca el outline azul del sistema.
-   Doble anillo: uno del color del fondo que despega, otro de luz. */
+   Solo con teclado (:focus-visible), nunca el outline azul del sistema. Es un
+   outline y no una sombra: los controles con superficie (botones primario y
+   secundario, switches, checks, selects) declaran su propio box-shadow en
+   una hoja que carga después, con la misma especificidad, y le ganaban al
+   anillo: quedaban sin ninguna marca de foco. El outline no compite con
+   nadie, sigue el border-radius, y el offset deja el aire del fondo entre el
+   control y la luz. Lo que marca el foco a su manera (un campo que se hunde)
+   lo apaga con outline: none. */
 :focus { outline: none; }
 :focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--ox-bg), 0 0 0 3.5px var(--ox-ring);
-  border-radius: var(--ox-r-sm);
-  transition: box-shadow var(--ox-t-1) var(--ox-ease-soft);
+  outline: 1.5px solid var(--op-ring);
+  outline-offset: 2px;
+  border-radius: var(--op-r-sm);
 }
 
 /* ── Tipografía utilitaria ─────────────────────────────────────────────────── */
-.ox-display {
-  font-size: var(--ox-fs-26);
-  font-weight: var(--ox-w-semi);
-  letter-spacing: var(--ox-track-tight);
-  line-height: var(--ox-lh-tight);
+.op-display {
+  font-size: var(--op-fs-26);
+  font-weight: var(--op-w-semi);
+  letter-spacing: var(--op-track-tight);
+  line-height: var(--op-lh-tight);
 }
-.ox-title {
-  font-size: var(--ox-fs-19);
-  font-weight: var(--ox-w-semi);
-  letter-spacing: var(--ox-track-tight);
-  line-height: var(--ox-lh-tight);
+.op-title {
+  font-size: var(--op-fs-19);
+  font-weight: var(--op-w-semi);
+  letter-spacing: var(--op-track-tight);
+  line-height: var(--op-lh-tight);
 }
-.ox-subtitle {
-  font-size: var(--ox-fs-15);
-  font-weight: var(--ox-w-medium);
-  letter-spacing: var(--ox-track-tight);
+.op-subtitle {
+  font-size: var(--op-fs-15);
+  font-weight: var(--op-w-medium);
+  letter-spacing: var(--op-track-tight);
 }
-.ox-label {
-  font-size: var(--ox-fs-12);
-  font-weight: var(--ox-w-medium);
-  color: var(--ox-text-2);
+.op-label {
+  font-size: var(--op-fs-12);
+  font-weight: var(--op-w-medium);
+  color: var(--op-text-2);
 }
-.ox-meta {
-  font-size: var(--ox-fs-11);
-  color: var(--ox-text-3);
+.op-meta {
+  font-size: var(--op-fs-11);
+  color: var(--op-text-3);
 }
-/* Un ícono adentro de una etiqueta o un dato chico va en el renglón, al lado
-   del texto. Los dos son texto en línea, y como todo `svg` es display:block,
-   el ícono se iba solo a un renglón de arriba. Salió de Pharos, donde «de la
-   red», «guardado hace…» y «Aplicar descuento» tenían el ícono flotando encima
-   del texto. Con :has() la regla toca solo a los que llevan ícono; los que son
-   texto pelado siguen en línea. */
-:is(.ox-meta, .ox-label):has(> .ox-icon) {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.ox-meta > .ox-icon { width: 12px; height: 12px; }
-.ox-label > .ox-icon { width: 14px; height: 14px; color: var(--ox-text-3); }
 /* La versalita espaciada: el gesto editorial del sistema. */
-.ox-eyebrow {
-  font-size: var(--ox-fs-10);
-  font-weight: var(--ox-w-semi);
-  letter-spacing: var(--ox-track-caps);
+.op-eyebrow {
+  font-size: var(--op-fs-10);
+  font-weight: var(--op-w-semi);
+  letter-spacing: var(--op-track-caps);
   text-transform: uppercase;
-  color: var(--ox-text-3);
+  color: var(--op-text-3);
 }
-.ox-mono {
-  font-family: var(--ox-mono);
+.op-mono {
+  font-family: var(--op-mono);
   font-size: 12px;
   font-variant-ligatures: none;
   letter-spacing: -.01em;
 }
 /* Números que no bailan al actualizarse en vivo. */
-.ox-num {
+.op-num {
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
 }
-.ox-dim  { color: var(--ox-text-3); }
-.ox-dim2 { color: var(--ox-text-4); }
-.ox-danger { color: var(--ox-danger); }
-
-/* `display: block` no es decoración: sobre un elemento INLINE —un <span> suelto
-   dentro de un div— `overflow` y `text-overflow` no aplican, la clase no hace
-   absolutamente nada y el texto termina cortado al aire contra el contenedor.
-   Se notaba solo donde el span no era ítem de un flex (que lo blockifica), y
-   por eso pasó desapercibido tanto tiempo: en los menús anda. */
-.ox-truncate {
-  display: block;
+.op-dim  { color: var(--op-text-3); }
+.op-dim2 { color: var(--op-text-4); }   /* no se lee: adorno, nunca un dato (tokens.css) */
+.op-danger { color: var(--op-danger); }
+.op-truncate {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Una ruta larga se recorta por el MEDIO, nunca por la cola.
-   El principio lo comparten todas —C:\Users\fulano\AppData\Roaming\…— y el
-   final es lo único que dice de qué carpeta se está hablando. `ox-truncate` a
-   secas deja «C:\Users\fulano\AppData\Roam…», que es justo la mitad que no
-   informa; y sin recorte ninguno el texto se corta al aire contra el borde.
-
-   Cuánto entra depende del ancho de la ventana, así que el recorte lo decide el
-   CSS y no un conteo de caracteres en JS —que tendría que volver a medir en
-   cada resize—. La cola NO se encoge (`flex: 0 0 auto`): toda la elipsis se la
-   come la cabeza, que es la que sobra. El `max-width` es el caso degenerado —
-   una cola más ancha que la caja entera—: ahí se recorta con la suya en vez de
-   empujar a la cabeza fuera de la vista. */
-.ox-path { display: flex; min-width: 0; }
-.ox-path__head,
-.ox-path__tail {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ox-path__head { flex: 0 1 auto; min-width: 2ch; }
-.ox-path__tail { flex: 0 0 auto; max-width: 100%; }
-
 /* ── Layout utilitario ───────────────────────────────────────────────────── */
-.ox-row  { display: flex; align-items: center; gap: var(--ox-2); }
-.ox-col  { display: flex; flex-direction: column; }
-.ox-grow { flex: 1 1 auto; min-width: 0; min-height: 0; }
-.ox-spacer { flex: 1 1 auto; }
+.op-row  { display: flex; align-items: center; gap: var(--op-2); }
+.op-col  { display: flex; flex-direction: column; }
+.op-grow { flex: 1 1 auto; min-width: 0; min-height: 0; }
+.op-spacer { flex: 1 1 auto; }
 
 /* Divisor: hairline, no un borde marcado. */
-.ox-hr {
+.op-hr {
   height: 1px;
-  background: var(--ox-line);
+  background: var(--op-line);
   border: 0;
-  margin: var(--ox-3) 0;
+  margin: var(--op-3) 0;
 }
-.ox-vr { width: 1px; align-self: stretch; background: var(--ox-line); }
+.op-vr { width: 1px; align-self: stretch; background: var(--op-line); }
 
 /* ── Íconos ──────────────────────────────────────────────────────────────────
    Todo símbolo es un SVG propio que se tiñe con currentColor. Cero emojis,
    cero glifos unicode: se renderizan distinto en cada máquina y no se controlan. */
-.ox-icon {
+.op-icon {
   width: 16px;
   height: 16px;
   flex: 0 0 auto;
@@ -243,10 +190,10 @@ p, code, pre,
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.ox-icon--sm { width: 14px; height: 14px; }
-.ox-icon--lg { width: 20px; height: 20px; }
-.ox-icon--xl { width: 28px; height: 28px; stroke-width: 1.25; }
-.ox-icon--fill { fill: currentColor; stroke: none; }
+.op-icon--sm { width: 14px; height: 14px; }
+.op-icon--lg { width: 20px; height: 20px; }
+.op-icon--xl { width: 28px; height: 28px; stroke-width: 1.25; }
+.op-icon--fill { fill: currentColor; stroke: none; }
 
 /* ── Esfumado del scroll ─────────────────────────────────────────────────────
    Donde el scroll recorta AL AIRE, el contenido se DESVANECE: un corte al aire
@@ -258,70 +205,60 @@ p, code, pre,
    además miente, porque el contenido no se pierde en la nada sino que muere
    contra un borde. Ese lado lleva --line-top / --line-bottom y corta limpio.
 
-   El padding ≥ --ox-fade evita que en reposo la banda coma el primer/último item.
+   El padding ≥ --op-fade evita que en reposo la banda coma el primer/último item.
    Las clases .is-top / .is-bottom las maneja scrollFade() en motion.js. */
 
 /* Registradas para que el fade ANIME por lado: una custom property sin @property
    no interpola, y el esfumado entraría de golpe al empezar a scrollear. */
-@property --ox-fade-top    { syntax: '<length>'; inherits: false; initial-value: 0px; }
-@property --ox-fade-bottom { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --op-fade-top    { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --op-fade-bottom { syntax: '<length>'; inherits: false; initial-value: 0px; }
 
-.ox-scroll {
+.op-scroll {
   overflow-y: auto;
   overflow-x: hidden;
-  padding-top: var(--ox-fade);
-  padding-bottom: var(--ox-fade);
-  --ox-fade-top: var(--ox-fade);
-  --ox-fade-bottom: var(--ox-fade);
-  transition: --ox-fade-top var(--ox-t-3) var(--ox-ease-soft),
-              --ox-fade-bottom var(--ox-t-3) var(--ox-ease-soft);
-  /* El esfumado es del contenido, no de la scrollbar: la franja de la
-     derecha (--ox-sb, el ancho de ::-webkit-scrollbar) va sin máscara. Con la
-     máscara entera, al llegar arriba el thumb quedaba tapado y recién
-     aparecía cuando el fade terminaba de retirarse. */
-  --ox-sb: 10px;
-  mask-image:
-    linear-gradient(
-      to bottom,
-      transparent 0,
-      #000 var(--ox-fade-top),
-      #000 calc(100% - var(--ox-fade-bottom)),
-      transparent 100%
-    ),
-    linear-gradient(#000, #000);
-  mask-size: calc(100% - var(--ox-sb)) 100%, var(--ox-sb) 100%;
-  mask-position: left top, right top;
-  mask-repeat: no-repeat;
-}
-/* Pegado arriba: no esfumamos arriba. Pegado abajo: no esfumamos abajo. */
-.ox-scroll.is-top    { --ox-fade-top: 0px; }
-.ox-scroll.is-bottom { --ox-fade-bottom: 0px; }
-
-/* De ese lado hay una línea, y la línea es el límite: el fade sobra. */
-.ox-scroll.ox-scroll--line-top    { --ox-fade-top: 0px; }
-.ox-scroll.ox-scroll--line-bottom { --ox-fade-bottom: 0px; }
-
-/* Sin nada que esfumar de ningún lado, la máscara solo cuesta una capa de más. */
-.ox-scroll.is-top.is-bottom,
-.ox-scroll.ox-scroll--line-top.ox-scroll--line-bottom { mask-image: none; }
-
-@property --ox-fade-left  { syntax: '<length>'; inherits: false; initial-value: 0px; }
-@property --ox-fade-right { syntax: '<length>'; inherits: false; initial-value: 0px; }
-
-.ox-scroll-x {
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding-left: var(--ox-fade);
-  padding-right: var(--ox-fade);
-  --ox-fade-left: var(--ox-fade);
-  --ox-fade-right: var(--ox-fade);
+  padding-top: var(--op-fade);
+  padding-bottom: var(--op-fade);
+  --op-fade-top: var(--op-fade);
+  --op-fade-bottom: var(--op-fade);
+  transition: --op-fade-top var(--op-t-3) var(--op-ease-soft),
+              --op-fade-bottom var(--op-t-3) var(--op-ease-soft);
   mask-image: linear-gradient(
-    to right,
+    to bottom,
     transparent 0,
-    #000 var(--ox-fade-left),
-    #000 calc(100% - var(--ox-fade-right)),
+    #000 var(--op-fade-top),
+    #000 calc(100% - var(--op-fade-bottom)),
     transparent 100%
   );
 }
-.ox-scroll-x.ox-scroll-x--line-left  { --ox-fade-left: 0px; }
-.ox-scroll-x.ox-scroll-x--line-right { --ox-fade-right: 0px; }
+/* Pegado arriba: no esfumamos arriba. Pegado abajo: no esfumamos abajo. */
+.op-scroll.is-top    { --op-fade-top: 0px; }
+.op-scroll.is-bottom { --op-fade-bottom: 0px; }
+
+/* De ese lado hay una línea, y la línea es el límite: el fade sobra. */
+.op-scroll.op-scroll--line-top    { --op-fade-top: 0px; }
+.op-scroll.op-scroll--line-bottom { --op-fade-bottom: 0px; }
+
+/* Sin nada que esfumar de ningún lado, la máscara solo cuesta una capa de más. */
+.op-scroll.is-top.is-bottom,
+.op-scroll.op-scroll--line-top.op-scroll--line-bottom { mask-image: none; }
+
+@property --op-fade-left  { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --op-fade-right { syntax: '<length>'; inherits: false; initial-value: 0px; }
+
+.op-scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-left: var(--op-fade);
+  padding-right: var(--op-fade);
+  --op-fade-left: var(--op-fade);
+  --op-fade-right: var(--op-fade);
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--op-fade-left),
+    #000 calc(100% - var(--op-fade-right)),
+    transparent 100%
+  );
+}
+.op-scroll-x.op-scroll-x--line-left  { --op-fade-left: 0px; }
+.op-scroll-x.op-scroll-x--line-right { --op-fade-right: 0px; }

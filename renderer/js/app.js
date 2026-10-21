@@ -1,28 +1,30 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    UMBRAL — renderer
-   Tres vistas: Recibidas (teléfono → PC), Para el celu (PC → teléfono) y el
-   Borrador, un texto de paso que comparten la PC y el celu. Las piezas son de
-   Onyx: el router hace el fundido entre ellas, reconcile()
-   pone la galería al día tarjeta por tarjeta, y menú, modal, toast y tooltip
-   son los overlays del framework. Lo propio de Umbral es el visor, el QR, el
-   velo de arrastrar y la tarjeta de actualización.
+   Tres vistas en el rail: Recibidas (teléfono → PC), Para el celu (PC →
+   teléfono) y el Notepad, un texto de paso que comparten la PC, el celu y
+   CC. Las piezas son de Opal (desde la 0.13; antes, de Onyx): el router hace
+   el fundido entre ellas, reconcile() pone la galería al día tarjeta por
+   tarjeta, y menú, modal, toast y tooltip son los overlays del framework. Lo
+   propio de Umbral es el visor, el QR, el velo de arrastrar y la tarjeta de
+   actualización.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 import { Icons } from './icons.js';
-import { Tooltip, Toast, Menu, Modal } from './overlays.js';
+import { Tooltip, Toast, Menu, FieldMenu, Modal } from './overlays.js';
 import Router from './router.js';
-import { initClickFlash, initScrollFades, raf2, bindSwitcher, exit, swap, numero, valor, frase, reconcile, stagger, deslizarAlto, roll } from './motion.js';
-import { esc, paint, mark, attempt, colorToken } from './ui.js';
+import { initClickFlash, initScrollFades, raf2, exit, swap, numero, valor, frase, reconcile, stagger, deslizarAlto, roll } from './motion.js';
+import { esc, paint, head, mark, attempt, colorToken } from './ui.js';
+import { Shell } from './shell.js';
 import { fmtClock, plural, locale } from './format.js';
 
 const api = window.umbral;
-const win = window.onyx.win;
+const win = window.opal.win;
 const $ = (id) => document.getElementById(id);
-const layer = () => $('ox-layer');
+const layer = () => $('op-layer');
 
 /* ══ Íconos propios ══════════════════════════════════════════════════════════
    Misma receta que el set base: grilla de 16, contenido entre 1.8 y 14.2,
-   trazo de .ox-icon. El arco tiene que coincidir con el splash del index.html
+   trazo de .op-icon. El arco tiene que coincidir con el splash del index.html
    y con la marca de la titlebar. */
 Icons.add({
   arch: '<path d="M3.67 13.67v-6a4.33 4.33 0 0 1 8.66 0v6"/><path d="M8 7.33v6.34"/>',
@@ -35,6 +37,8 @@ Icons.add({
   quitar: '<circle cx="8" cy="8" r="6"/><path d="M5.3 8h5.4"/>',
   sizeSm: '<rect x="5" y="5" width="6" height="6" rx="1.2"/>',
   sizeLg: '<rect x="2.5" y="2.5" width="11" height="11" rx="2"/>',
+  // Una hoja con renglones: el Notepad.
+  notepad: '<rect x="3.2" y="1.8" width="9.6" height="12.4" rx="1.6"/><path d="M5.6 5.4h4.8M5.6 8h4.8M5.6 10.6h2.8"/>',
   // Radiación: el botón nuclear. Este va relleno, como los puntos macizos.
   nuke: ['', ' transform="rotate(120 8 8)"', ' transform="rotate(240 8 8)"']
     .map((t) => `<path fill="currentColor" stroke="none"${t} d="M6.6 5.57 5 2.81a6 6 0 0 1 6 0L9.4 5.57a2.8 2.8 0 0 0-2.8 0z"/>`).join('')
@@ -50,14 +54,15 @@ const S = {
   out: [],      // para el celu: { name, url, size, mtime, image, delivered }
   url: '',
   qr: '',
+  thumb: 220,   // px de las miniaturas; se cambia con el slider y queda en settings
   booting: true,
-  // El Borrador: un espejo de borrador.txt, que es del main.
-  borrador: '',
-  borradorDesde: null, // { desde, t }: el último cambio que vino de afuera, para decirlo abajo
-  borradorSel: null,   // { start, end, scroll } al irse de la vista, para volver al mismo lugar
-  borradorLetra: 12,   // px; se cambia con Ctrl + / Ctrl - / Ctrl 0 y queda en settings
-  borradorLetraT: 0,   // cuándo se cambió, para decirlo abajo un rato
-  borradorAviso: null, // { texto, t }: algo que se hizo con una tecla (Ctrl+K), para decirlo abajo un rato
+  // El Notepad: un espejo de notepad.txt, que es del main.
+  notepad: '',
+  notepadDesde: null, // { desde, t }: el último cambio que vino de afuera, para decirlo abajo
+  notepadSel: null,   // { start, end, scroll } al irse de la vista, para volver al mismo lugar
+  notepadLetra: 12,   // px; se cambia con Ctrl + / Ctrl - / Ctrl 0 y queda en settings
+  notepadLetraT: 0,   // cuándo se cambió, para decirlo abajo un rato
+  notepadAviso: null, // { texto, t }: algo que se hizo con una tecla (Ctrl+K), para decirlo abajo un rato
   buscado: '',         // lo último que se buscó con Ctrl+F: vuelve al abrir de nuevo
 };
 
@@ -65,6 +70,18 @@ const fmtWhen = (ms) => `${fmtClock(ms)} · ${new Date(ms).toLocaleDateString(lo
 const extOf = (n) => (n.includes('.') ? n.split('.').pop().slice(0, 5).toUpperCase() : 'ARCHIVO');
 
 /* ══ Acciones ════════════════════════════════════════════════════════════════ */
+
+/* Lo que no tiene vuelta atrás arranca con el foco en Cancelar: un Enter que
+   venía para otra cosa no purga nada. El Modal.confirm de Opal enfoca el que
+   confirma; el de Onyx, que usaba Umbral hasta la 0.12, era así. */
+const confirmar = ({ title, sub, confirmLabel, danger = false }) => Modal.show({
+  title,
+  sub,
+  actions: [
+    { label: 'Cancelar', value: false, autofocus: danger },
+    { label: confirmLabel, value: true, variant: danger ? 'danger-solid' : 'primary', autofocus: !danger },
+  ],
+}).then((v) => v === true);
 
 // Una imagen se copia como imagen; lo demás, como archivo (se pega en una
 // carpeta o en Claude, como un Ctrl+C del Explorador).
@@ -132,18 +149,7 @@ async function addFiles(files) {
    Abrir arriba de todo: no tiene visor, se abre con su programa. */
 
 function menuAt(x, y, items) {
-  let p = $('ub-anchor');
-  if (!p) {
-    p = document.createElement('div');
-    p.id = 'ub-anchor';
-    p.className = 'ub-anchor';
-    document.body.appendChild(p);
-  }
-  // El ancla es siempre la misma: pedirlo otra vez es abrirlo en el punto nuevo, no cerrarlo.
-  Menu.close(true);
-  p.style.left = `${Math.round(x)}px`;
-  p.style.top = `${Math.round(y) - 6}px`;   // Menu.show lo baja 6 px: que nazca en el cursor
-  return Menu.show(p, items);
+  return Menu.showAt(x, y, items);
 }
 
 const itemAbrir = (fn) => ({ label: 'Abrir', icon: 'file', onSelect: () => abrir(fn) });
@@ -210,7 +216,7 @@ const cardBody = (item) => (item.image
   ? `<img src="${esc(item.url)}" alt="" loading="lazy" draggable="false">`
   : `<div class="ub-file">${Icons.svg('file')}
       <span class="ub-file__ext">${esc(extOf(item.name))}</span>
-      <span class="ub-file__name ox-truncate ox-copyable">${esc(item.name)}</span>
+      <span class="ub-file__name op-truncate op-copyable">${esc(item.name)}</span>
     </div>`);
 
 function cardIn(item) {
@@ -247,41 +253,67 @@ function updateOut(el, { it }) {
 
 const VIEWS = {
   recibidas: {
+    title: 'Recibidas',
+    sub: 'Lo que mandaste desde el teléfono',
     list: () => S.inbox,
     card: cardIn,
     menu: menuIn,
     open: (name) => api.recibidas.open(name),
     empty: () => `
-      <div class="ox-empty ub-empty">${Icons.svg('arch')}
-        <div class="ox-empty__title">El umbral está despejado</div>
-        <div class="ox-empty__text">Compartí imágenes o archivos desde el teléfono y aparecen acá.</div>
-        ${S.url ? `<span class="ub-empty__addr ox-copyable">${esc(S.url)}</span>` : ''}
+      <div class="op-empty ub-empty">${Icons.svg('arch')}
+        <div class="op-empty__title">El umbral está despejado</div>
+        <div class="op-empty__text">Compartí imágenes o archivos desde el teléfono y aparecen acá.</div>
+        ${S.url ? `<span class="ub-empty__addr op-copyable">${esc(S.url)}</span>` : ''}
       </div>`,
   },
   celu: {
+    title: 'Para el celu',
+    sub: 'Lo que el teléfono baja desde su pestaña Recibir',
     list: () => S.out,
     card: cardOut,
     menu: menuOut,
     open: (name) => api.outbox.open(name),
     update: updateOut,
     empty: () => `
-      <div class="ox-empty ub-empty">${Icons.svg('phoneDown')}
-        <div class="ox-empty__title">Nada esperando al celu</div>
-        <div class="ox-empty__text">Arrastrá archivos acá, pegá una imagen con Ctrl+V o usá
+      <div class="op-empty ub-empty">${Icons.svg('phoneDown')}
+        <div class="op-empty__title">Nada esperando al celu</div>
+        <div class="op-empty__text">Arrastrá archivos acá, pegá una imagen con Ctrl+V o usá
           <strong>Enviar a <span class="ub-empty__inline">${Icons.svg('chevronRight')}</span> Umbral (al celu)</strong>
           en el Explorador. En el teléfono aparecen en la pestaña <strong>Recibir</strong> de:</div>
-        ${S.url ? `<span class="ub-empty__addr ox-copyable">${esc(S.url)}</span>` : ''}
+        ${S.url ? `<span class="ub-empty__addr op-copyable">${esc(S.url)}</span>` : ''}
       </div>`,
   },
 };
 
 const items = (v) => VIEWS[v].list().map((it) => ({ key: it.name, html: VIEWS[v].card(it), it }));
 
+/* Las herramientas de cada vista van en su encabezado, a la derecha del
+   título: viven y mueren con el pintado. Los tooltips que cambian con el
+   estado (apagado, por qué) los pone updateChrome(). */
+const iconBtn = (id, icon, tip, cls = '') =>
+  `<button class="op-iconbtn ${cls}" id="${id}" data-tip="${esc(tip)}" data-tip-side="bottom"><i data-icon="${icon}"></i></button>`;
+const SEP = '<span class="op-vr ub-vr"></span>';
+const SIZE = `<div class="ub-size" data-tip="Tamaño de las miniaturas" data-tip-side="bottom">
+  <i data-icon="sizeSm"></i>
+  <input type="range" class="op-slider" id="thumb-size" min="150" max="420" step="10" aria-label="Tamaño de las miniaturas">
+  <i data-icon="sizeLg"></i>
+</div>`;
+const TOOLS = {
+  recibidas: () => `${SIZE}${SEP}${iconBtn('btn-folder', 'folder', 'Abrir la carpeta de lo recibido')}${iconBtn('btn-nuke', 'nuke', 'Purgar todo', 'ub-nuke')}`,
+  celu: () => `${iconBtn('btn-add', 'plus', 'Agregar archivos')}${iconBtn('btn-sweep', 'sweep', 'Quitar las ya bajadas')}${SEP}${SIZE}${SEP}`
+    + `${iconBtn('btn-folder', 'folder', 'Abrir la carpeta de la bandeja')}${iconBtn('btn-nuke', 'nuke', 'Vaciar la bandeja', 'ub-nuke')}`,
+  // Limpiar y Copiar todo van arriba: abajo a la derecha caen los toasts.
+  notepad: () => `${iconBtn('btn-folder', 'folder', 'Mostrar notepad.txt en su carpeta')}${SEP}
+    <button class="op-btn op-btn--ghost op-btn--sm" id="note-clear"><i data-icon="trash"></i> Limpiar</button>
+    <button class="op-btn op-btn--secondary op-btn--sm" id="note-copy"><i data-icon="copy"></i> Copiar todo</button>`,
+};
+
 function view(v) {
   const list = VIEWS[v].list();
-  paint(list.length
-    ? `<div class="ox-scroll ox-grow"><div class="ub-grid" id="grid"></div></div>`
-    : `<div class="ox-grow" style="display:grid;place-items:center">${VIEWS[v].empty()}</div>`);
+  paint(`${head({ title: VIEWS[v].title, sub: VIEWS[v].sub, actions: TOOLS[v]() })}${list.length
+    ? `<div class="op-scroll op-grow"><div class="ub-grid" id="grid"></div></div>`
+    : `<div class="op-grow" style="display:grid;place-items:center">${VIEWS[v].empty()}</div>`}`);
+  wireHead(v);
   const grid = $('grid');
   if (!grid) return;
   reconcile(grid, items(v), { enter: false, update: VIEWS[v].update, created: (el) => Icons.mount(el) });
@@ -321,55 +353,55 @@ function wireGrid(grid, v) {
   });
 }
 
-/* ══ El Borrador ═════════════════════════════════════════════════════════════
+/* ══ El Notepad ═════════════════════════════════════════════════════════════
    Una instancia intermedia para copiar y pegar: un comando, un link, unas
-   palabras. Vive en borrador.txt (borrador.js, en el main) y es el mismo que
+   palabras. Vive en notepad.txt (notepad.js, en el main) y es el mismo que
    ve Umbral Mobile. Lo que se escribe acá sale 250 ms después de la última
    tecla; lo que cambia el celu, o un editor que abra el .txt, llega por
-   `borrador:changed` y entra en el lugar, con el cursor junto al mismo texto.
+   `notepad:changed` y entra en el lugar, con el cursor junto al mismo texto.
    Si las dos puntas escriben a la vez, gana la última. Limpiar no pregunta:
    el toast trae Deshacer por si fue sin querer. */
 
-let borrTimer = 0;   // distinto de 0 = hay algo escrito acá que todavía no salió
+let noteTimer = 0;   // distinto de 0 = hay algo escrito acá que todavía no salió
 
-function guardarBorrador({ ya = false } = {}) {
-  clearTimeout(borrTimer);
+function guardarNotepad({ ya = false } = {}) {
+  clearTimeout(noteTimer);
   const sale = () => {
-    borrTimer = 0;
-    api.borrador.set(S.borrador).catch((err) => Toast.error('No se pudo guardar el borrador', err.message));
+    noteTimer = 0;
+    api.notepad.set(S.notepad).catch((err) => Toast.error('No se pudo guardar el notepad', err.message));
   };
   if (ya) sale();
-  else borrTimer = setTimeout(sale, 250);
+  else noteTimer = setTimeout(sale, 250);
 }
 
-const DESDE = { celu: 'el celu', archivo: 'el archivo' };
+const DESDE = { celu: 'el celu', cc: 'CC', archivo: 'el archivo' };
 
-const borradorInfo = () => {
-  const d = S.borradorDesde;
+const notepadInfo = () => {
+  const d = S.notepadDesde;
   // Los avisos de paso (la letra, un Ctrl+K, un cambio de afuera) se dicen un
   // rato; si se pisan, se dice el último.
   const aviso = [
-    { t: S.borradorLetraT, dura: 1600, texto: `Letra de ${S.borradorLetra} px` },
-    S.borradorAviso && { t: S.borradorAviso.t, dura: 1600, texto: S.borradorAviso.texto },
+    { t: S.notepadLetraT, dura: 1600, texto: `Letra de ${S.notepadLetra} px` },
+    S.notepadAviso && { t: S.notepadAviso.t, dura: 1600, texto: S.notepadAviso.texto },
     d && { t: d.t, dura: 2400, texto: `Cambió desde ${DESDE[d.desde] || 'afuera'}` },
   ].filter((a) => a && Date.now() - a.t < a.dura).sort((a, b) => b.t - a.t)[0];
   if (aviso) return aviso.texto;
-  const n = S.borrador.length;
-  if (!n) return 'Se guarda solo y se ve también en Umbral Mobile';
-  const lineas = S.borrador.split('\n').length;
+  const n = S.notepad.length;
+  if (!n) return 'Se guarda solo, y lo ven el celu y CC';
+  const lineas = S.notepad.split('\n').length;
   return `${plural(n, 'carácter', 'caracteres')}${lineas > 1 ? ` · ${plural(lineas, 'línea', 'líneas')}` : ''}`;
 };
 
-function syncBorrador() {
-  const vacio = !S.borrador;
-  const copy = $('borr-copy');
-  const clear = $('borr-clear');
+function syncNotepad() {
+  const vacio = !S.notepad;
+  const copy = $('note-copy');
+  const clear = $('note-clear');
   if (!copy) return;
   copy.disabled = clear.disabled = vacio;
   copy.dataset.tip = vacio ? 'No hay nada que copiar' : 'Copiar todo el texto';
   clear.dataset.tip = vacio ? 'Ya está vacío' : 'Borrar todo el texto';
   // Sin destello: con cada tecla se reiniciaba y al dejar de escribir se cortaba.
-  frase($('borr-info'), esc(borradorInfo()), { destello: false });
+  frase($('note-info'), esc(notepadInfo()), { destello: false });
   for (const fn of alDia) fn();
 }
 
@@ -377,7 +409,7 @@ function syncBorrador() {
    que poner al día cuando el texto cambia por código, sin evento de input. */
 let alDia = [];
 
-/* El cursor del Borrador: un bloque violeta con aureola, el mismo de NTX. Un
+/* El cursor del Notepad: un bloque de luz con aureola, el mismo de NTX. Un
    textarea no tiene cursor de bloque, así que el nativo va transparente y el
    bloque se dibuja encima. Para saber dónde cae, un espejo invisible con la
    misma letra, el mismo ancho y los mismos cortes de renglón repite el texto
@@ -513,7 +545,7 @@ function numerosDeLinea(ta) {
     raf = 0;
     if (!ta.isConnected) return;
     const lineas = ta.value.split('\n');
-    caja.style.setProperty('--ub-borr-num', Math.max(2, String(lineas.length).length));
+    caja.style.setProperty('--ub-note-num', Math.max(2, String(lineas.length).length));
     const cs = getComputedStyle(ta);
     for (const p of LETRA_CURSOR) col.style[p] = cs[p];
     col.style.transform = `translate(${ta.offsetLeft + ta.clientLeft}px, ${ta.offsetTop + ta.clientTop}px)`;
@@ -608,23 +640,23 @@ async function cortarLinea(ta) {
   const junto = seguido ? corte.texto + texto : texto;
   corte = { valor: ta.value, pos: ta.selectionStart, texto: junto };
   const n = junto.split('\n').length - 1;
-  S.borradorAviso = {
+  S.notepadAviso = {
     texto: n === 1 ? 'Línea cortada: quedó en el portapapeles' : `${n} líneas cortadas, juntas en el portapapeles`,
     t: Date.now(),
   };
-  syncBorrador();
-  setTimeout(syncBorrador, 1700);   // y después vuelve el conteo
+  syncNotepad();
+  setTimeout(syncNotepad, 1700);   // y después vuelve el conteo
   await attempt(() => api.copyText(junto), { errorTitle: 'No se pudo copiar la línea' });
 }
 
-/* Ctrl+F busca en el Borrador, como en VS Code: una barra flotante arriba a
+/* Ctrl+F busca en el Notepad, como en VS Code: una barra flotante arriba a
    la derecha, sin distinguir mayúsculas ni tildes («cancion» encuentra
    «Canción»). Las coincidencias se pintan en una capa encima del campo, con
    un espejo que tiene la misma letra y los mismos cortes de renglón; la
-   actual va como el cursor, violeta con la letra en oscuro. Enter y
+   actual va como el cursor, de luz con la letra en oscuro. Enter y
    Shift+Enter (o F3 y Shift+F3) van a la siguiente y a la anterior; Esc
    cierra y deja seleccionada la que estaba marcada. */
-let buscar = null;   // el buscador de la vista del Borrador que se ve
+let buscar = null;   // el buscador de la vista del Notepad que se ve
 
 /* El texto plegado (sin tildes, en minúscula) y, para cada letra plegada, en
    qué letra del original estaba: así lo encontrado vuelve a su lugar. */
@@ -789,11 +821,11 @@ function buscador(ta) {
       barra.className = 'ub-buscar';
       barra.setAttribute('role', 'search');
       barra.innerHTML = `${Icons.svg('search')}
-        <input class="ub-buscar__q" spellcheck="false" placeholder="Buscar" aria-label="Buscar en el borrador">
+        <input class="ub-buscar__q" spellcheck="false" placeholder="Buscar" aria-label="Buscar en el notepad">
         <span class="ub-buscar__n"></span>
-        <button class="ox-iconbtn ox-iconbtn--sm" data-ir="-1" aria-label="Anterior" data-tip="Anterior" data-tip-key="Shift+Enter" data-tip-side="bottom" disabled>${Icons.svg('chevronUp')}</button>
-        <button class="ox-iconbtn ox-iconbtn--sm" data-ir="1" aria-label="Siguiente" data-tip="Siguiente" data-tip-key="Enter" data-tip-side="bottom" disabled>${Icons.svg('chevronDown')}</button>
-        <button class="ox-iconbtn ox-iconbtn--sm" data-cerrar aria-label="Cerrar" data-tip="Cerrar" data-tip-key="Esc" data-tip-side="bottom">${Icons.svg('close')}</button>`;
+        <button class="op-iconbtn op-iconbtn--sm" data-ir="-1" aria-label="Anterior" data-tip="Anterior" data-tip-key="Shift+Enter" data-tip-side="bottom" disabled>${Icons.svg('chevronUp')}</button>
+        <button class="op-iconbtn op-iconbtn--sm" data-ir="1" aria-label="Siguiente" data-tip="Siguiente" data-tip-key="Enter" data-tip-side="bottom" disabled>${Icons.svg('chevronDown')}</button>
+        <button class="op-iconbtn op-iconbtn--sm" data-cerrar aria-label="Cerrar" data-tip="Cerrar" data-tip-key="Esc" data-tip-side="bottom">${Icons.svg('close')}</button>`;
       const input = barra.querySelector('.ub-buscar__q');
       input.value = S.buscado;
       input.addEventListener('input', () => { S.buscado = input.value; pintar(); });
@@ -850,30 +882,28 @@ function buscador(ta) {
   return { abrir, cerrar, ir, get abierto() { return !!barra; } };
 }
 
-function viewBorrador() {
-  paint(`<div class="ub-borr ox-grow">
-    <textarea class="ox-textarea ox-textarea--mono ub-borr__text" id="borr" spellcheck="false"
-      placeholder="Pegá o escribí algo para tenerlo a mano un rato: un comando, un link, unas palabras."></textarea>
-    <div class="ub-borr__foot">
-      <span class="ub-borr__info" id="borr-info"></span>
-      <div class="ox-spacer"></div>
-      <button class="ox-btn ox-btn--ghost ox-btn--sm" id="borr-clear"><i data-icon="trash"></i> Limpiar</button>
-      <button class="ox-btn ox-btn--secondary ox-btn--sm" id="borr-copy"><i data-icon="copy"></i> Copiar todo</button>
+function viewNotepad() {
+  paint(`${head({ title: 'Notepad', sub: 'Lo escriben la PC, el celu y CC', actions: TOOLS.notepad() })}
+  <div class="ub-note op-grow">
+    <textarea class="op-textarea op-textarea--mono ub-note__text" id="note" spellcheck="false"
+      placeholder="Pegá o escribí algo para tenerlo a mano: un comando, un link, una nota para CC."></textarea>
+    <div class="ub-note__foot">
+      <span class="ub-note__info" id="note-info"></span>
     </div>
   </div>`);
-  const ta = $('borr');
-  Icons.mount(ta.parentElement);
-  ta.value = S.borrador;
+  const ta = $('note');
+  wireHead('notepad');
+  ta.value = S.notepad;
   buscar = buscador(ta);
   numerosDeLinea(ta);
   cursorBloque(ta);
-  syncBorrador();
+  syncNotepad();
 
   ta.addEventListener('input', () => {
-    S.borrador = ta.value;
-    S.borradorDesde = null;
-    syncBorrador();
-    guardarBorrador();
+    S.notepad = ta.value;
+    S.notepadDesde = null;
+    syncNotepad();
+    guardarNotepad();
   });
   ta.addEventListener('keydown', (e) => {
     if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyK') {
@@ -881,8 +911,8 @@ function viewBorrador() {
       cortarLinea(ta);
     }
   });
-  $('borr-copy').addEventListener('click', copiarBorrador);
-  $('borr-clear').addEventListener('click', limpiarBorrador);
+  $('note-copy').addEventListener('click', copiarNotepad);
+  $('note-clear').addEventListener('click', limpiarNotepad);
   // Ctrl + rueda también agranda o achica, de a un paso por muesca.
   let rueda = 0;
   ta.addEventListener('wheel', (e) => {
@@ -890,19 +920,19 @@ function viewBorrador() {
     e.preventDefault();
     rueda += e.deltaY;
     if (Math.abs(rueda) < 50) return;
-    letraBorrador(rueda < 0 ? 1 : -1);
+    letraNotepad(rueda < 0 ? 1 : -1);
     rueda = 0;
   }, { passive: false });
-  Router.onLeave(() => { S.borradorSel = { start: ta.selectionStart, end: ta.selectionEnd, scroll: ta.scrollTop }; });
+  Router.onLeave(() => { S.notepadSel = { start: ta.selectionStart, end: ta.selectionEnd, scroll: ta.scrollTop }; });
 
   // El foco se pone al navegar: se vuelve al mismo lugar donde estaba el cursor.
-  const sel = S.borradorSel;
+  const sel = S.notepadSel;
   ta.focus({ preventScroll: true });
   if (sel) { ta.setSelectionRange(sel.start, sel.end); ta.scrollTop = sel.scroll; }
   else ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
-/* El tamaño de la letra del Borrador, aparte del zoom de la ventana: Ctrl +
+/* El tamaño de la letra del Notepad, aparte del zoom de la ventana: Ctrl +
    y Ctrl - de a un píxel, Ctrl 0 vuelve al de siempre. Se ve abajo un rato
    («Letra de 14 px») y queda guardado para la próxima. */
 const LETRA = { min: 9, max: 32, base: 12 };
@@ -910,21 +940,21 @@ let letraTimer = 0;
 let letraInfoTimer = 0;
 
 function ponerLetra(px) {
-  document.documentElement.style.setProperty('--ub-borr-fs', `${px}px`);
+  document.documentElement.style.setProperty('--ub-note-fs', `${px}px`);
 }
 
-function letraBorrador(paso) {
-  const px = paso === 0 ? LETRA.base : Math.min(LETRA.max, Math.max(LETRA.min, S.borradorLetra + paso));
-  S.borradorLetraT = Date.now();
-  if (px !== S.borradorLetra) {
-    S.borradorLetra = px;
+function letraNotepad(paso) {
+  const px = paso === 0 ? LETRA.base : Math.min(LETRA.max, Math.max(LETRA.min, S.notepadLetra + paso));
+  S.notepadLetraT = Date.now();
+  if (px !== S.notepadLetra) {
+    S.notepadLetra = px;
     ponerLetra(px);
     clearTimeout(letraTimer);
-    letraTimer = setTimeout(() => window.onyx.settings.save({ borradorLetra: px }).catch(() => {}), 300);
+    letraTimer = setTimeout(() => window.opal.settings.save({ notepadLetra: px }).catch(() => {}), 300);
   }
-  syncBorrador();
+  syncNotepad();
   clearTimeout(letraInfoTimer);
-  letraInfoTimer = setTimeout(syncBorrador, 1700);   // y después vuelve el conteo
+  letraInfoTimer = setTimeout(syncNotepad, 1700);   // y después vuelve el conteo
 }
 
 /* Dónde queda el cursor cuando el texto cambia desde afuera: si lo cambiado
@@ -941,13 +971,13 @@ function moverCursor(viejo, nuevo, pos) {
   return nuevo.length - suf;
 }
 
-function borradorDeAfuera({ text, desde }) {
-  if (text === S.borrador) return;
-  if (borrTimer) return;   // lo escrito acá todavía no salió: cuando salga, gana
-  S.borrador = text;
-  S.borradorSel = null;
-  S.borradorDesde = { desde, t: Date.now() };
-  const ta = $('borr');
+function notepadDeAfuera({ text, desde }) {
+  if (text === S.notepad) return;
+  if (noteTimer) return;   // lo escrito acá todavía no salió: cuando salga, gana
+  S.notepad = text;
+  S.notepadSel = null;
+  S.notepadDesde = { desde, t: Date.now() };
+  const ta = $('note');
   if (ta) {
     const viejo = ta.value;
     const [a, b, top] = [ta.selectionStart, ta.selectionEnd, ta.scrollTop];
@@ -959,47 +989,47 @@ function borradorDeAfuera({ text, desde }) {
     void ta.offsetWidth;
     ta.classList.add('is-remoto');
   }
-  syncBorrador();
-  setTimeout(syncBorrador, 2500);   // y después vuelve el conteo
+  syncNotepad();
+  setTimeout(syncNotepad, 2500);   // y después vuelve el conteo
 }
 
-async function copiarBorrador() {
-  if (!S.borrador) return;
-  const ok = await attempt(() => api.copyText(S.borrador), { errorTitle: 'No se pudo copiar' });
+async function copiarNotepad() {
+  if (!S.notepad) return;
+  const ok = await attempt(() => api.copyText(S.notepad), { errorTitle: 'No se pudo copiar' });
   if (ok) Toast.show({ title: 'Copiado al portapapeles', icon: 'copy', duration: 2200 });
 }
 
 /* El texto se funde por color, no por opacidad (con opacity el campo sube a
    una capa propia y pierde ClearType: un «brillo» al terminar). Recién
    esfumado se vacía el campo. */
-function limpiarBorrador() {
-  if (!S.borrador) return;
-  const antes = S.borrador;
-  const sel = S.borradorSel;
-  S.borrador = '';
-  S.borradorSel = null;
-  S.borradorDesde = null;
-  guardarBorrador({ ya: true });
-  const ta = $('borr');
+function limpiarNotepad() {
+  if (!S.notepad) return;
+  const antes = S.notepad;
+  const sel = S.notepadSel;
+  S.notepad = '';
+  S.notepadSel = null;
+  S.notepadDesde = null;
+  guardarNotepad({ ya: true });
+  const ta = $('note');
   if (ta) {
     ta.classList.add('is-limpiando');
     setTimeout(() => {
       if (!ta.isConnected) return;
-      ta.value = S.borrador;
+      ta.value = S.notepad;
       ta.classList.remove('is-limpiando');
       ta.focus({ preventScroll: true });
       for (const fn of alDia) fn();
     }, 180);
   }
-  syncBorrador();
-  Toast.show({ title: 'Borrador limpio', icon: 'trash', duration: 5200, action: { label: 'Deshacer', run: () => {
-    if (S.borrador) return;   // ya escribiste algo nuevo (acá o en el celu): no se pisa
-    S.borrador = antes;
-    S.borradorSel = sel;
-    guardarBorrador({ ya: true });
-    const t = $('borr');
+  syncNotepad();
+  Toast.show({ title: 'Notepad limpio', icon: 'trash', duration: 5200, action: { label: 'Deshacer', run: () => {
+    if (S.notepad) return;   // ya escribiste algo nuevo (acá o en el celu): no se pisa
+    S.notepad = antes;
+    S.notepadSel = sel;
+    guardarNotepad({ ya: true });
+    const t = $('note');
     if (t) { t.value = antes; t.focus({ preventScroll: true }); }
-    syncBorrador();
+    syncNotepad();
   } } });
 }
 
@@ -1023,36 +1053,26 @@ function go(v) {
 
 /* ══ El chrome ═══════════════════════════════════════════════════════════════ */
 
-let syncSeg = () => {};
-
 function updateChrome() {
   const v = Router.name;
   numero($('n-in'), S.inbox.length);
   numero($('n-out'), S.out.length);
   $('n-out').classList.toggle('is-hot', S.out.some((i) => !i.delivered));
 
+  // Las herramientas son del encabezado de la vista: solo están las de la que se ve.
   const sweep = $('btn-sweep');
-  sweep.disabled = !S.out.some((i) => i.delivered);
-  sweep.dataset.tip = sweep.disabled ? 'Quitar las ya bajadas: ninguna bajó todavía' : 'Quitar las ya bajadas';
-
-  // El Borrador no tiene miniaturas ni nada que purgar; su carpeta es la del .txt.
-  $('size-tools').hidden = v === 'borrador';
-  $('nuke-tools').hidden = v === 'borrador';
-
+  if (sweep) {
+    sweep.disabled = !S.out.some((i) => i.delivered);
+    sweep.dataset.tip = sweep.disabled ? 'Quitar las ya bajadas: ninguna bajó todavía' : 'Quitar las ya bajadas';
+  }
   const nuke = $('btn-nuke');
-  const vacia = v === 'celu' ? !S.out.length : !S.inbox.length;
-  nuke.disabled = vacia;
-  nuke.dataset.tip = v === 'celu'
-    ? (vacia ? 'La bandeja ya está vacía' : 'Vaciar la bandeja')
-    : (vacia ? 'No hay nada que purgar' : 'Purgar todo');
-
-  $('btn-folder').dataset.tip = { celu: 'Abrir la carpeta de la bandeja', borrador: 'Mostrar borrador.txt en su carpeta' }[v]
-    || 'Abrir la carpeta de lo recibido';
-  $('out-tools').hidden = v !== 'celu';
-
-  // El segmentado sigue a la vista también cuando cambia sola (arrastrar, Enviar a).
-  for (const o of $('seg').querySelectorAll('.ox-segmented__opt')) o.classList.toggle('is-active', o.dataset.value === v);
-  syncSeg();
+  if (nuke) {
+    const vacia = v === 'celu' ? !S.out.length : !S.inbox.length;
+    nuke.disabled = vacia;
+    nuke.dataset.tip = v === 'celu'
+      ? (vacia ? 'La bandeja ya está vacía' : 'Vaciar la bandeja')
+      : (vacia ? 'No hay nada que purgar' : 'Purgar todo');
+  }
 }
 
 function wireChrome() {
@@ -1061,33 +1081,43 @@ function wireChrome() {
   const maxBtn = $('win-max');
   maxBtn.addEventListener('click', () => win.toggleMaximize());
   win.onMaximized((isMax) => {
-    maxBtn.innerHTML = Icons.svg(isMax ? 'winRestore' : 'winMax');
+    maxBtn.classList.toggle('is-b', isMax);   // los dos íconos se cruzan (.op-iconswap)
     maxBtn.setAttribute('aria-label', isMax ? 'Restaurar' : 'Maximizar');
   });
 
-  syncSeg = bindSwitcher($('seg'), (v) => go(v));
+  // El rail: el router marca el activo, también cuando la vista cambia sola (arrastrar, Enviar a).
+  document.querySelectorAll('.op-navitem').forEach((b) => b.addEventListener('click', () => go(b.dataset.view)));
 
   $('btn-qr').addEventListener('click', toggleQr);
-  $('btn-folder').addEventListener('click', () => api.openInbox({ celu: 'outbox', borrador: 'borrador' }[Router.name] || 'inbox'));
-  $('btn-nuke').addEventListener('click', purgar);
-  api.onShortcut(() => { if (Router.name === 'borrador') $('borr')?.focus({ preventScroll: true }); });
-  $('btn-add').addEventListener('click', () => $('file-pick').click());
+  api.onShortcut(() => { if (Router.name === 'notepad') $('note')?.focus({ preventScroll: true }); });
   $('file-pick').addEventListener('change', (e) => {
     const files = [...e.target.files];
     e.target.value = '';
     addFiles(files);
   });
-  $('btn-sweep').addEventListener('click', () => {
-    const done = S.out.filter((i) => i.delivered);
-    if (!done.length) return;
-    S.out = S.out.filter((i) => !i.delivered);
-    for (const item of done) api.outbox.remove(item.name);
-    sync('celu');
-    Toast.show({ title: plural(done.length, 'archivo quitado', 'archivos quitados'), icon: 'sweep', duration: 2600 });
-  });
 
   document.addEventListener('keydown', onKey);
   wireDrop();
+}
+
+/* Lo del encabezado de la vista que se acaba de pintar. Muere con el pintado:
+   cada visita engancha lo suyo y nada se acumula. */
+function wireHead(v) {
+  $('btn-folder')?.addEventListener('click', () => api.openInbox({ celu: 'outbox', notepad: 'notepad' }[v] || 'inbox'));
+  $('btn-nuke')?.addEventListener('click', purgar);
+  $('btn-add')?.addEventListener('click', () => $('file-pick').click());
+  $('btn-sweep')?.addEventListener('click', quitarBajadas);
+  if ($('thumb-size')) wireSize();
+  updateChrome();
+}
+
+function quitarBajadas() {
+  const done = S.out.filter((i) => i.delivered);
+  if (!done.length) return;
+  S.out = S.out.filter((i) => !i.delivered);
+  for (const item of done) api.outbox.remove(item.name);
+  sync('celu');
+  Toast.show({ title: plural(done.length, 'archivo quitado', 'archivos quitados'), icon: 'sweep', duration: 2600 });
 }
 
 function onKey(e) {
@@ -1098,7 +1128,7 @@ function onKey(e) {
     else if (buscar?.abierto) buscar.cerrar();
     return;
   }
-  // Ctrl+F busca en el Borrador; F3 y Shift+F3 siguen buscando con la barra abierta.
+  // Ctrl+F busca en el Notepad; F3 y Shift+F3 siguen buscando con la barra abierta.
   if (buscar && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyF') {
     e.preventDefault();
     buscar.abrir();
@@ -1109,20 +1139,20 @@ function onKey(e) {
     buscar.ir(e.shiftKey ? -1 : 1);
     return;
   }
-  // Ctrl 1, 2 y 3 van a cada pestaña, en el orden del segmentado. Sale del
-  // código físico para que ande igual con el teclado numérico.
+  // Ctrl 1, 2 y 3 van a cada vista, en el orden del rail. Sale del código
+  // físico para que ande igual con el teclado numérico.
   if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
     const n = /^(?:Digit|Numpad)([1-9])$/.exec(e.code)?.[1];
-    const v = n && $('seg').querySelectorAll('.ox-segmented__opt')[n - 1]?.dataset.value;
+    const v = n && document.querySelectorAll('.op-navitem')[n - 1]?.dataset.view;
     if (v) { e.preventDefault(); go(v); return; }
   }
-  // En el Borrador, Ctrl + / Ctrl - / Ctrl 0 son de la letra, no del zoom de la ventana.
-  if (Router.name === 'borrador' && e.ctrlKey && !e.altKey) {
+  // En el Notepad, Ctrl + / Ctrl - / Ctrl 0 son de la letra, no del zoom de la ventana.
+  if (Router.name === 'notepad' && e.ctrlKey && !e.altKey) {
     const { key: tecla, code } = e;
     const paso = ['+', '='].includes(tecla) || code === 'NumpadAdd' ? 1
       : ['-', '_'].includes(tecla) || code === 'NumpadSubtract' ? -1
       : tecla === '0' || code === 'Numpad0' ? 0 : null;
-    if (paso !== null) { e.preventDefault(); letraBorrador(paso); return; }
+    if (paso !== null) { e.preventDefault(); letraNotepad(paso); return; }
   }
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'v') {
     if (e.target.closest?.('input, textarea, [contenteditable]')) return;
@@ -1139,19 +1169,24 @@ async function pegar() {
 
 /* ── Tamaño de las miniaturas ───────────────────────────────────────────── */
 
-function wireSize(px) {
+function ponerMiniatura(px) {
+  document.documentElement.style.setProperty('--ub-thumb', `${px}px`);
+}
+
+let thumbTimer = 0;
+function wireSize() {
   const s = $('thumb-size');
   const put = (v) => {
-    document.documentElement.style.setProperty('--ub-thumb', `${v}px`);
-    s.style.setProperty('--ox-pct', `${((v - s.min) / (s.max - s.min)) * 100}%`);
+    S.thumb = v;
+    ponerMiniatura(v);
+    s.style.setProperty('--op-pct', `${((v - s.min) / (s.max - s.min)) * 100}%`);
   };
-  s.value = px;
+  s.value = S.thumb;
   put(Number(s.value));
-  let t = 0;
   s.addEventListener('input', () => {
     put(Number(s.value));
-    clearTimeout(t);
-    t = setTimeout(() => window.onyx.settings.save({ miniatura: Number(s.value) }).catch(() => {}), 300);
+    clearTimeout(thumbTimer);
+    thumbTimer = setTimeout(() => window.opal.settings.save({ miniatura: Number(s.value) }).catch(() => {}), 300);
   });
 }
 
@@ -1166,7 +1201,7 @@ let qr = null;
 let pairTimer = 0;
 
 const pairIdleHTML = (nota = '') => `
-  <button class="ox-btn ox-btn--secondary ox-btn--sm" data-pair="start"><i data-icon="link"></i> Código para la app del celu</button>
+  <button class="op-btn op-btn--secondary op-btn--sm" data-pair="start"><i data-icon="link"></i> Código para la app del celu</button>
   ${nota ? `<div class="ub-qr__text">${esc(nota)}</div>` : ''}`;
 
 const restante = (expires) => {
@@ -1191,7 +1226,7 @@ async function pairStart() {
   if (!p || !qr) return;
   const code = `${p.code.slice(0, 3)} ${p.code.slice(3)}`;
   pairSwap(`
-    <div class="ub-pair__code ox-mono ox-copyable">${esc(code)}</div>
+    <div class="ub-pair__code op-mono op-copyable">${esc(code)}</div>
     <div class="ub-qr__text">Escribilo en Umbral Mobile. <span class="ub-pair__left">${restante(p.expires)}</span></div>`);
   pairStop();
   pairTimer = setInterval(() => {
@@ -1206,7 +1241,7 @@ async function pairStart() {
 
 async function olvidarDispositivos() {
   closeQr();
-  const ok = await Modal.confirm({
+  const ok = await confirmar({
     title: '¿Olvidar los dispositivos vinculados?',
     sub: 'Umbral cambia su llave. El celu y los navegadores que ya estaban vinculados van a tener que vincularse de nuevo.',
     confirmLabel: 'Olvidar',
@@ -1228,7 +1263,7 @@ function toggleQr() {
     <div class="ub-qr__code">${S.qr ? `<img src="${esc(S.qr)}" alt="QR de ${esc(S.url)}">` : ''}</div>
     <div class="ub-qr__text">Escanealo con el teléfono para abrir Umbral en su navegador. Ya va vinculado.</div>
     <div class="ub-qr__pair">${pairIdleHTML()}</div>
-    <button class="ox-btn ox-btn--ghost ox-btn--sm ub-qr__forget" data-pair="forget"><i data-icon="lock"></i> Olvidar dispositivos</button>`;
+    <button class="op-btn op-btn--ghost op-btn--sm ub-qr__forget" data-pair="forget"><i data-icon="lock"></i> Olvidar dispositivos</button>`;
   Icons.mount(el);
   el.addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-pair]');
@@ -1236,10 +1271,11 @@ function toggleQr() {
     else if (b?.dataset.pair === 'forget') olvidarDispositivos();
   });
   layer().appendChild(el);
+  // El botón está al pie del rail: el cartel se apoya arriba de él por su
+  // borde de abajo, así lo que crece (el código de vinculación) crece hacia arriba.
   const a = btn.getBoundingClientRect();
-  const left = Math.min(Math.max(10, a.left - 8), window.innerWidth - el.offsetWidth - 10);
-  el.style.left = `${Math.round(left)}px`;
-  el.style.top = `${Math.round(a.bottom + 6)}px`;
+  el.style.left = `${Math.round(Math.max(10, a.left))}px`;
+  el.style.bottom = `${Math.round(window.innerHeight - a.top + 8)}px`;
   btn.classList.add('is-open');
   qr = el;
 
@@ -1261,11 +1297,11 @@ function closeQr() {
 /* ── Purga ──────────────────────────────────────────────────────────────── */
 
 async function purgar() {
-  if (!VIEWS[Router.name]) return;   // en el Borrador no hay nada que purgar
+  if (!VIEWS[Router.name]) return;   // en el Notepad no hay nada que purgar
   const celu = Router.name === 'celu';
   const n = celu ? S.out.length : S.inbox.length;
   if (!n) return;
-  const okay = await Modal.confirm(celu
+  const okay = await confirmar(celu
     ? { title: 'Vaciar la bandeja', sub: `Se van a quitar ${plural(n, 'archivo', 'archivos')} y el celu deja de verlos. Los originales en tu PC no se tocan.`, confirmLabel: 'Vaciar', danger: true }
     : { title: 'Purga total', sub: `Se van a eliminar ${plural(n, 'archivo recibido', 'archivos recibidos')}. No hay vuelta atrás.`, confirmLabel: 'Purgar', danger: true });
   if (!okay) return;
@@ -1317,7 +1353,7 @@ function wireDrop() {
     if (--depth <= 0) { depth = 0; hide(); }
   });
   document.addEventListener('drop', (e) => {
-    // Texto arrastrado al Borrador (o al buscador): que lo suelte el propio campo.
+    // Texto arrastrado al Notepad (o al buscador): que lo suelte el propio campo.
     if (!isFiles(e) && e.target.closest?.('textarea, input')) return;
     e.preventDefault();   // sin esto Electron navega al archivo soltado
     depth = 0;
@@ -1343,10 +1379,10 @@ function updView(s) {
     // El título del release es «Umbral X — qué trae»: arriba la versión, abajo el qué.
     case 'available': return { ico: 'download', title: `Umbral ${s.version} disponible`,
       sub: `${cap((s.name || '').split(/\s+[—-]\s+/).slice(1).join(' — ')) || `Tenés la ${s.current}`}${mb(s.bytes)}`,
-      acts: [['open', 'Ver novedades', 'ox-btn--secondary'], ['download', 'Descargar', 'ox-btn--primary']] };
+      acts: [['open', 'Ver novedades', 'op-btn--secondary'], ['download', 'Descargar', 'op-btn--primary']] };
     case 'downloading': return { ico: 'download', title: `Descargando la ${s.version}`, sub: `${Math.round(s.pct * 100)} %`, bar: s.pct, sticky: true };
     case 'ready': return { ico: 'check', title: `La ${s.version} está lista`, sub: 'Si no reiniciás ahora, se instala cuando salgas de Umbral.',
-      acts: [['install', 'Reiniciar', 'ox-btn--primary']] };
+      acts: [['install', 'Reiniciar', 'op-btn--primary']] };
     case 'checking': return s.manual && { ico: 'spin', title: 'Buscando actualizaciones', sub: 'Consultando GitHub' };
     case 'current': return s.manual && { ico: 'check', title: 'Estás al día', sub: `Umbral ${s.current}`, auto: 3200 };
     case 'error': return s.manual && { ico: 'alert', bad: true, title: 'No se pudo buscar', sub: s.error };
@@ -1362,12 +1398,12 @@ function updHTML(v) {
       <span class="ub-upd__ico${v.bad ? ' is-bad' : ''}">${ico}</span>
       <div class="ub-upd__txt">
         <div class="ub-upd__title">${esc(v.title)}</div>
-        <div class="ub-upd__sub ox-copyable">${esc(v.sub || '')}</div>
+        <div class="ub-upd__sub op-copyable">${esc(v.sub || '')}</div>
       </div>
-      ${v.sticky ? '' : `<button class="ox-iconbtn ox-iconbtn--sm ub-upd__x" data-upd="close" aria-label="Cerrar">${Icons.svg('close')}</button>`}
+      ${v.sticky ? '' : `<button class="op-iconbtn op-iconbtn--sm ub-upd__x" data-upd="close" aria-label="Cerrar">${Icons.svg('close')}</button>`}
     </div>
-    ${v.bar != null ? `<div class="ox-meter"><div class="ox-meter__fill" style="--ox-pct:${(v.bar * 100).toFixed(1)}%"></div></div>` : ''}
-    ${v.acts ? `<div class="ub-upd__acts">${v.acts.map(([a, l, c]) => `<button class="ox-btn ox-btn--sm ${c}" data-upd="${a}">${esc(l)}</button>`).join('')}</div>` : ''}`;
+    ${v.bar != null ? `<div class="op-meter"><div class="op-meter__fill" style="--op-pct:${(v.bar * 100).toFixed(1)}%"></div></div>` : ''}
+    ${v.acts ? `<div class="ub-upd__acts">${v.acts.map(([a, l, c]) => `<button class="op-btn op-btn--sm ${c}" data-upd="${a}">${esc(l)}</button>`).join('')}</div>` : ''}`;
 }
 
 function hideUpd() {
@@ -1400,11 +1436,11 @@ function renderUpd(s) {
        destellaba en cada aviso del principal, varias veces por segundo, y el
        % se prendía y apagaba sin parar. Se busca lo vivo, no lo que todavía
        se esfuma en el calco del relevo. */
-    const vivo = (sel) => [...upd.querySelectorAll(sel)].find((n) => !n.closest('.ox-swap-out'));
+    const vivo = (sel) => [...upd.querySelectorAll(sel)].find((n) => !n.closest('.op-swap-out'));
     const sub = vivo('.ub-upd__sub');
     if (sub) roll(sub, Math.round(v.bar * 100), (n) => { sub.textContent = `${Math.round(n)} %`; },
       { from: parseInt(sub.textContent, 10) });
-    vivo('.ox-meter__fill')?.style.setProperty('--ox-pct', `${(v.bar * 100).toFixed(1)}%`);
+    vivo('.op-meter__fill')?.style.setProperty('--op-pct', `${(v.bar * 100).toFixed(1)}%`);
   } else if (key !== updKey) {
     const el = upd;
     deslizarAlto(el, () => swap(el, updHTML(v), { relevo: true }));
@@ -1415,31 +1451,47 @@ function renderUpd(s) {
   if (v.auto) updTimer = setTimeout(() => { updDismissed = key; hideUpd(); }, v.auto);
 }
 
+/* Un archivo de datos ilegible se aparta (store.cjs) y la app arranca sin él.
+   Sin este aviso, para Fran sus ajustes simplemente desaparecieron. */
+async function tellAsides() {
+  const list = await window.opal.asides().catch(() => []);
+  if (!list.length) return;
+  const files = [...new Set(list.map((a) => a.file))];
+  Toast.show({
+    tone: 'error',
+    duration: 0,
+    title: files.length === 1 ? `${files[0]} estaba dañado` : `${files.join(', ')} estaban dañados`,
+    text: `${files.length === 1 ? 'Quedó' : 'Quedaron'} aparte en la carpeta de datos, con «.corrupto-» en el nombre, y Umbral arrancó sin ${files.length === 1 ? 'él' : 'ellos'}.`,
+  });
+}
+
 /* ══ Arranque ════════════════════════════════════════════════════════════════ */
 
 function syncWindowColor() {
-  const hex = colorToken('--ox-bg');
+  const hex = colorToken('--op-bg');
   if (hex) win.setBackground(hex);
 }
 
 async function boot() {
   Icons.mount(document);      // reemplaza los <i data-icon> del index.html
   Tooltip.init();
+  FieldMenu.init();           // el click derecho en un campo: cortar, copiar, pegar
   initClickFlash();
   initScrollFades();
+  Shell.init();               // dónde caen los toasts: la esquina de la hoja de la vista
   syncWindowColor();
   $('srv-mark').outerHTML = mark('running');
-  Router.define({ recibidas: () => view('recibidas'), celu: () => view('celu'), borrador: viewBorrador }, $('view'));
+  Router.define({ recibidas: () => view('recibidas'), celu: () => view('celu'), notepad: viewNotepad }, $('view'));
 
   let settings = {};
   try {
     const info = await api.serverInfo();
     S.url = info.url || '';
-    let borr;
-    [S.inbox, S.out, settings, borr] = await Promise.all([
-      api.recibidas.list(), api.outbox.list(), window.onyx.settings.get().catch(() => ({})), api.borrador.get(),
+    let nota;
+    [S.inbox, S.out, settings, nota] = await Promise.all([
+      api.recibidas.list(), api.outbox.list(), window.opal.settings.get().catch(() => ({})), api.notepad.get(),
     ]);
-    S.borrador = borr?.text || '';
+    S.notepad = nota?.text || '';
     S.qr = await api.qr().catch(() => '');
   } catch (err) {
     console.error(err);
@@ -1447,9 +1499,11 @@ async function boot() {
   }
 
   $('addr').textContent = S.url;
-  wireSize(settings.miniatura || 220);
-  S.borradorLetra = Math.min(LETRA.max, Math.max(LETRA.min, Number(settings.borradorLetra) || LETRA.base));
-  ponerLetra(S.borradorLetra);
+  S.thumb = Number(settings.miniatura) || 220;
+  ponerMiniatura(S.thumb);
+  // Hasta la 0.12 el ajuste se llamaba borradorLetra.
+  S.notepadLetra = Math.min(LETRA.max, Math.max(LETRA.min, Number(settings.notepadLetra ?? settings.borradorLetra) || LETRA.base));
+  ponerLetra(S.notepadLetra);
   wireChrome();
   Router.onChange(updateChrome);
   Router.go('recibidas');
@@ -1465,14 +1519,19 @@ async function boot() {
     thumb.className = 'ub-toast-thumb';
     thumb.src = item.url;
     thumb.alt = '';
-    t.el.querySelector(':scope > .ox-icon')?.replaceWith(thumb);
+    t.el.querySelector(':scope > .op-icon')?.replaceWith(thumb);
   });
   api.pair.onDone((d) => {
     if (pairTimer) { pairStop(); pairSwap(pairIdleHTML('Listo, quedó vinculado.')); }
     Toast.show({ title: 'Celu vinculado', text: d?.device || '', icon: 'check', duration: 3200 });
   });
   api.outbox.onAdded((list, opts) => addOut(list, opts));
-  api.borrador.onChanged(borradorDeAfuera);
+  api.notepad.onChanged(notepadDeAfuera);
+  // /notepad, desde CC: la ventana ya vino al frente, falta la vista.
+  api.notepad.onIr(() => {
+    go('notepad');
+    $('note')?.focus({ preventScroll: true });
+  });
   api.outbox.onDelivered((item) => {
     const cur = S.out.find((i) => i.name === item.name);
     if (!cur) return;
@@ -1486,6 +1545,7 @@ async function boot() {
     renderUpd(s);
   });
   api.update.state().then(renderUpd);
+  tellAsides();
 
   // El splash se va recién cuando ya hay algo pintado debajo.
   raf2(() => {

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   ONYX — router
+   OPAL — router
    Una app de escritorio no tiene URLs: tiene un nombre de vista y, a lo sumo,
    un parámetro. Eso es todo lo que hace falta, y hacerlo con un router web
    (history, hash, rutas parseadas) es traer una máquina para clavar un clavo.
@@ -71,54 +71,49 @@ export function go(name, param = null) {
   // El rail marca activo el grupo, no la vista: el detalle de un ítem sigue
   // iluminando la sección de la que salió.
   const navKey = route.nav || name;
-  document.querySelectorAll('.ox-navitem').forEach((b) =>
+  document.querySelectorAll('.op-navitem').forEach((b) =>
     b.classList.toggle('is-active', b.dataset.view === navKey));
 
-  // La vista que se va pasa a un calco que se esfuma encima (calcar, en
-  // motion.js): sin esto se iba de golpe y la nueva arrancaba desde
-  // transparente, un cuadro vacío en cada navegación.
-  //
-  // Salvo que el host se haya calcado hace un instante: un refresh() y un
-  // go() en la misma tarea (en Quire, abrir o cerrar un documento desde otra
-  // vista: el aviso repinta la vista actual y enseguida se navega). Lo que
-  // hay en el host es un estado intermedio que el calco del refresh —casi
-  // opaco todavía— no dejó ver. Calcarlo otra vez dejaba DOS calcos
-  // fundiéndose juntos, y el intermedio (Páginas con las hojas en blanco)
-  // asomaba hasta un 25 % a mitad de camino (shell-29). Se descarta, y lo
-  // nuevo va directo debajo del calco que ya está: el criterio de repintar().
-  //
-  // `__pinta` dice que en el host vive otra vista: lo que el repintado de
-  // recién dejó pendiente para el final de la tarea (devolver el scroll y el
-  // foco, asentar en motion.js) ya no es para ella.
+  /* La vista que se va pasa a un calco que se esfuma encima (calcar, en
+     motion.js): sin esto se iba de un cuadro al otro y la nueva arrancaba
+     desde transparente, un cuadro vacío en cada navegación.
+
+     Salvo que el host se haya calcado hace un instante (un refresh() y un
+     go() en la misma tarea): lo que hay es un estado intermedio que el calco,
+     todavía casi opaco, no dejó ver. Calcarlo otra vez dejaba DOS calcos
+     fundiéndose y el intermedio asomaba a mitad de camino (lo midió Onyx en
+     Quire). Se descarta, y lo nuevo va directo debajo del calco que ya está.
+
+     `__pinta` avisa que en el host vive otra vista: lo que el repintado de
+     recién dejó pendiente (devolver el scroll y el foco) ya no es para ella. */
   if (host) host.__pinta = (host.__pinta ?? 0) + 1;
   const intermedio = !!host && recienCalcado(host);
   if (intermedio) host.replaceChildren();
   const saliente = intermedio || calcar(host);
+
   route.view(param);
 
-  // Si hay una vista yéndose, la nueva no anima nada: ya está entera y quieta
-  // debajo del calco, que es opaco, y el relevo lo hace el calco al
-  // esfumarse. Antes la nueva esperaba 90 ms invisible y entraba corrida
-  // 10 px: la pantalla se destapaba hasta la mitad y volvía (con contenido
-  // claro, un parpadeo) y lo que las dos vistas tienen en el mismo lugar —el
-  // título, las barras— temblaba. Medido en Quire (0.9.5).
-  //
-  // Sin vista yéndose (el arranque) entra sobre el eje del flujo. La
-  // transición se reinicia a mano: sin el reflow intermedio el navegador no
-  // vuelve a disparar la animación al re-agregar la clase.
-  if (host) host.classList.remove('ox-view', 'is-settled');
+  /* Si hay una vista yéndose, la nueva no anima nada: ya está entera y
+     quieta debajo del calco, que es opaco, y el relevo lo hace el calco al
+     esfumarse. Si entrara aflorando (subiendo desde transparente), la
+     pantalla se destaparía hasta la mitad y volvería, y lo que las dos vistas
+     tienen en el mismo lugar (el encabezado, las barras) temblaría. Aflora
+     sola, sin nada que se vaya: al arrancar. La transición se reinicia a
+     mano: sin el reflow intermedio el navegador no vuelve a dispararla. */
+  if (host) host.classList.remove('op-view');
   if (host && !saliente) {
     void host.offsetWidth;
-    host.classList.add('ox-view');
-    // Terminada la entrada, se apaga con una clase: una animación con fill
-    // `both` deja su último cuadro aplicado para siempre, y una opacidad
-    // retenida vuelve a la vista frontera de backdrop para lo que tenga adentro.
-    const settle = (ev) => {
-      if (ev.target !== host || ev.animationName !== 'ox-glide-in') return;
-      host.removeEventListener('animationend', settle);
-      host.classList.add('is-settled');
-    };
-    host.addEventListener('animationend', settle);
+    host.classList.add('op-view');
+    /* Y la clase se VA cuando la animación termina — no es prolijidad. Una
+       animación de opacidad retenida (fill both) deja al contenedor como
+       frontera de backdrop: cualquier vidrio ADENTRO de la vista (un velo,
+       una .op-card--glass) computa su blur pero no tiene qué muestrear — el
+       esmerilado no pinta y el contenido de abajo se ve nítido. Comprobado a
+       píxel: con la clase puesta no esmerila; sacándola, sí. La duración se
+       lee del computado para no desincronizarse con --op-t-4. */
+    clearTimeout(host.__opViewTimer);
+    const dur = (parseFloat(getComputedStyle(host).animationDuration) || 0.42) * 1000;
+    host.__opViewTimer = setTimeout(() => host.classList.remove('op-view'), dur + 80);
   }
 
   listeners.forEach((fn) => fn({ ...current }, from));
@@ -126,7 +121,7 @@ export function go(name, param = null) {
 }
 
 /** Vuelve a montar la vista actual (después de un cambio de datos de fondo).
- *  Es un fundido que no pierde el lugar —scroll, foco, revelados, cápsulas—
+ *  Es un fundido que no pierde el lugar (scroll, foco, revelados, cápsulas)
  *  y no vuelve a hacer entrar nada: lo hace paint() (repintar, en motion.js). */
 export function refresh() {
   const route = routes.get(current.name);

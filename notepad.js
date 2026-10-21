@@ -1,12 +1,17 @@
 'use strict';
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   UMBRAL — el Borrador
-   Un texto de paso para copiar y pegar (un comando, un link, unas palabras),
-   guardado como un solo `borrador.txt`, nada más sofisticado. Lo editan tres:
+   UMBRAL — el Notepad
+   Un texto de paso para copiar y pegar (un comando, un link, unas palabras,
+   lo que Fran le deja anotado a CC), guardado como un solo `notepad.txt`,
+   nada más sofisticado. Hasta la 0.12 se llamó Borrador (borrador.txt):
+   migrate() lo renombra la primera vez. Lo editan cuatro:
 
-     · la PC, desde la pestaña Borrador (IPC);
-     · el celu, por el servidor (GET/PUT /borrador, ver server.js);
+     · la PC, desde la vista Notepad (IPC);
+     · el celu, por el servidor (GET/PUT /notepad, ver server.js);
+     · CC, con las herramientas del mod de S:\tools\Notepad: escribe el .txt
+       y deja al lado `notepad.cc` con el hash de lo que escribió, así el
+       cambio se reconoce como suyo y no como de un editor cualquiera;
      · cualquiera que abra el .txt con un editor: se vigila el archivo y lo
        que cambie afuera entra solo.
 
@@ -24,17 +29,23 @@
 
 const fs = require('fs');
 const fsp = fs.promises;
+const path = require('path');
 const crypto = require('crypto');
 
-// Un millón de caracteres: un borrador no es un documento. Frena a quien
+// Un millón de caracteres: un notepad no es un documento. Frena a quien
 // mande cualquier cosa por el servidor.
 const MAX_CHARS = 1_000_000;
+
+const FILE = 'notepad.txt';
+const LEGACY = 'borrador.txt';
+// La marca de CC: el hash del texto que escribió el mod (ver arriba).
+const CC_MARK = 'notepad.cc';
 
 const hashOf = (t) => crypto.createHash('sha1').update(t, 'utf8').digest('hex').slice(0, 16);
 
 // Lo que viene de un editor de Windows trae CRLF y a veces BOM. Un textarea
 // solo conoce \n: sin normalizar, el mismo texto tendría dos versiones.
-const norm = (t) => String(t ?? '').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+const norm = (t) => String(t ?? '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -54,13 +65,27 @@ async function renameWithRetry(tmp, file, intentos = 6) {
 }
 
 /**
- * @param {string} file  la ruta de borrador.txt
+ * La 0.13 renombró el Borrador: si en `dir` hay un borrador.txt y todavía no
+ * un notepad.txt, pasa a llamarse notepad.txt. Devuelve la ruta del Notepad.
+ */
+async function migrate(dir) {
+  const file = path.join(dir, FILE);
+  const legacy = path.join(dir, LEGACY);
+  if (!fs.existsSync(file) && fs.existsSync(legacy)) {
+    await fsp.rename(legacy, file).catch((err) => console.error('[notepad] no se pudo renombrar borrador.txt:', err.message));
+  }
+  return file;
+}
+
+/**
+ * @param {string} file  la ruta de notepad.txt
  * @param {object} o
  * @param {(estado: {text, hash}, desde: string) => void} o.onChange  avisa cada cambio con quién lo hizo
  * @param {number} o.delay     cuánto se espera a que deje de escribir antes de ir al disco
  * @param {number} o.interval  cada cuánto se mira el archivo por cambios de afuera (0 = no se mira)
  */
-function createBorrador(file, { onChange = () => {}, delay = 400, interval = 1500 } = {}) {
+function createNotepad(file, { onChange = () => {}, delay = 400, interval = 1500 } = {}) {
+  const ccMark = path.join(path.dirname(file), CC_MARK);
   let text = '';
   let hash = hashOf('');
   let disk = '';        // lo último que se leyó o escribió acá: así se reconoce un cambio ajeno
@@ -112,11 +137,16 @@ function createBorrador(file, { onChange = () => {}, delay = 400, interval = 150
       await fsp.writeFile(tmp, t, 'utf8');
       await renameWithRetry(tmp, file);
       disk = t;
-    }).catch((err) => console.error('[borrador] no se pudo guardar:', err.message));
+    }).catch((err) => console.error('[notepad] no se pudo guardar:', err.message));
     return writing;
   }
 
-  // Alguien lo editó afuera (Notepad++, otro programa). Mientras hay un
+  // ¿Lo escribió CC? Su marca tiene el hash de lo que dejó en el .txt.
+  async function deCC(t) {
+    try { return (await fsp.readFile(ccMark, 'utf8')).trim() === hashOf(t); } catch { return false; }
+  }
+
+  // Alguien lo editó afuera (CC, Notepad++, otro programa). Mientras hay un
   // guardado pendiente no se mira: lo que hay en el disco es viejo y entrarlo
   // pisaría lo que se está escribiendo.
   async function onFileChange(cur, prev) {
@@ -130,7 +160,7 @@ function createBorrador(file, { onChange = () => {}, delay = 400, interval = 150
     if (t === text || t.length > MAX_CHARS) return;
     text = t;
     hash = hashOf(t);
-    onChange(get(), 'archivo');
+    onChange(get(), (await deCC(t)) ? 'cc' : 'archivo');
   }
 
   /** Al salir: deja de mirar y guarda lo pendiente sin esperar a nadie. */
@@ -146,4 +176,4 @@ function createBorrador(file, { onChange = () => {}, delay = 400, interval = 150
   return { load, get, set, flush, close, file };
 }
 
-module.exports = { createBorrador, hashOf, MAX_CHARS };
+module.exports = { createNotepad, migrate, hashOf, MAX_CHARS, CC_MARK };

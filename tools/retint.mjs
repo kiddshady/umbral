@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   Re-tinta una app Onyx entera, dejando los tres lugares en sincronía.
+   Re-tinta una app Opal entera, dejando los tres lugares en sincronía.
 
    El color de la app vive en tokens.css (en oklch), pero hay dos copias en hex
    que NO se pueden derivar en tiempo de ejecución:
@@ -12,9 +12,15 @@
 
    Uso:
      node tools/retint.mjs --accent cian
+     node tools/retint.mjs --blur 24 --fog 1.4
      node tools/retint.mjs --hue 285 --tint 1.6
      node tools/retint.mjs --mono roboto
-     node tools/retint.mjs --accent "34 211 238" --hue 205 --dir C:\\tools\\MiApp
+     node tools/retint.mjs --accent "34 211 238" --dir S:\\tools\\MiApp
+
+   Nota de Opal: el default es acromático absoluto (tint 0), así que el matiz
+   queda LATENTE — un preset de acento trae su hue, pero hasta que no subas
+   --tint la escalera de grises sigue neutra. El carácter de Opal se mueve
+   sobre todo con --blur (el vidrio) y --fog (la niebla de atrás).
    ═══════════════════════════════════════════════════════════════════════════ */
 
 import fs from 'fs';
@@ -34,7 +40,7 @@ const HTML = path.join(DIR, 'renderer', 'index.html');
 
 for (const f of [TOKENS, MAIN, HTML]) {
   if (!fs.existsSync(f)) {
-    console.error(`No parece una app Onyx: falta ${path.relative(DIR, f)}`);
+    console.error(`No parece una app Opal: falta ${path.relative(DIR, f)}`);
     process.exit(1);
   }
 }
@@ -50,7 +56,7 @@ if (accentArg) {
     console.error(`Acento inválido: "${accentArg}". Usá un preset (${Object.keys(ACCENTS).join(', ')}) o un triplete "R G B".`);
     process.exit(1);
   }
-  css = css.replace(/(--ox-accent-rgb:\s*)[^;]+/, `$1${rgb}`);
+  css = css.replace(/(--op-accent-rgb:\s*)[^;]+/, `$1${rgb}`);
   // Un preset trae su matiz: el gris de la app acompaña al acento, que es lo
   // que hace que se vea deliberado y no como un color pegado sobre un gris ajeno.
   if (preset && !args.has('hue')) args.set('hue', String(preset.hue));
@@ -58,18 +64,18 @@ if (accentArg) {
 }
 
 /* ── Familia monoespaciada ────────────────────────────────────────────────────
-   Solo se aceptan las que existen como token `--ox-mono-*` en tokens.css. Es a
-   propósito: apuntar --ox-mono a una familia que nadie declaró en fonts.css no
+   Solo se aceptan las que existen como token `--op-mono-*` en tokens.css. Es a
+   propósito: apuntar --op-mono a una familia que nadie declaró en fonts.css no
    da error, da una app que se ve bien acá y distinta en otra máquina. */
 if (args.has('mono')) {
   const pedida = String(args.get('mono')).trim().toLowerCase();
-  const disponibles = [...css.matchAll(/--ox-mono-([a-z0-9-]+):/g)].map((m) => m[1]);
+  const disponibles = [...css.matchAll(/--op-mono-([a-z0-9-]+):/g)].map((m) => m[1]);
   if (!disponibles.includes(pedida)) {
     console.error(`Mono inválida: "${pedida}". Declaradas en tokens.css: ${disponibles.join(', ')}.`);
     console.error('Para sumar una: el .woff2 en renderer/fonts/, su @font-face en fonts.css, y su token acá.');
     process.exit(1);
   }
-  css = css.replace(/(--ox-mono:\s*)[^;]+/, `$1var(--ox-mono-${pedida})`);
+  css = css.replace(/(--op-mono:\s*)[^;]+/, `$1var(--op-mono-${pedida})`);
   console.log(`  mono      → ${pedida}`);
 }
 
@@ -77,24 +83,38 @@ if (args.has('mono')) {
 if (args.has('hue')) {
   const hue = Number(args.get('hue'));
   if (!Number.isFinite(hue) || hue < 0 || hue > 360) { console.error('--hue tiene que estar entre 0 y 360'); process.exit(1); }
-  css = css.replace(/(--ox-hue:\s*)[^;]+/, `$1${hue}`);
+  css = css.replace(/(--op-hue:\s*)[^;]+/, `$1${hue}`);
   console.log(`  matiz     → ${hue}°`);
 }
 if (args.has('tint')) {
   const tint = Number(args.get('tint'));
   if (!Number.isFinite(tint) || tint < 0) { console.error('--tint tiene que ser un número ≥ 0'); process.exit(1); }
-  css = css.replace(/(--ox-tint:\s*)[^;]+/, `$1${tint}`);
+  css = css.replace(/(--op-tint:\s*)[^;]+/, `$1${tint}`);
   console.log(`  temperat. → ×${tint}`);
+}
+
+/* ── El vidrio ───────────────────────────────────────────────────────────── */
+if (args.has('blur')) {
+  const blur = Number(args.get('blur'));
+  if (!Number.isFinite(blur) || blur < 0 || blur > 80) { console.error('--blur tiene que ser un número de px entre 0 y 80'); process.exit(1); }
+  css = css.replace(/(--op-blur:\s*)[^;]+/, `$1${blur}px`);
+  console.log(`  desenfoque→ ${blur}px`);
+}
+if (args.has('fog')) {
+  const fog = Number(args.get('fog'));
+  if (!Number.isFinite(fog) || fog < 0) { console.error('--fog tiene que ser un número ≥ 0'); process.exit(1); }
+  css = css.replace(/(--op-fog:\s*)[^;]+/, `$1${fog}`);
+  console.log(`  niebla    → ×${fog}`);
 }
 
 fs.writeFileSync(TOKENS, css);
 
 /* ── Propagar el hex ─────────────────────────────────────────────────────── */
-const hue = Number(css.match(/--ox-hue:\s*([\d.]+)/)[1]);
-const tint = Number(css.match(/--ox-tint:\s*([\d.]+)/)[1]);
-const bg = css.match(/--ox-bg:\s*oklch\(([\d.]+)%\s*calc\(([\d.]+)\s*\*\s*var\(--ox-tint\)\)/);
+const hue = Number(css.match(/--op-hue:\s*([\d.]+)/)[1]);
+const tint = Number(css.match(/--op-tint:\s*([\d.]+)/)[1]);
+const bg = css.match(/--op-bg:\s*oklch\(([\d.]+)%\s*calc\(([\d.]+)\s*\*\s*var\(--op-tint\)\)/);
 if (!bg) {
-  console.error('No pude leer --ox-bg de tokens.css. ¿Le cambiaste la forma a la declaración?');
+  console.error('No pude leer --op-bg de tokens.css. ¿Le cambiaste la forma a la declaración?');
   process.exit(1);
 }
 const hex = oklchToHex(Number(bg[1]) / 100, Number(bg[2]) * tint, hue);

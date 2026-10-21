@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   ONYX — helpers de vista
+   OPAL — helpers de vista
    Lo que necesitan todas las vistas: pintar, encabezar, escapar, y mostrar
    estado. Nada de acá sabe de tu dominio; si tenés que importar algo de tu app
    en este archivo, va en el tuyo.
@@ -47,8 +47,7 @@ export function esc(s) {
 
    El canvas convierte cualquier notación —rgb, oklch, color(display-p3 …) y lo
    que venga después— sin que haya nada que parsear.
-   (El caso completo, con cómo se cazó, está en las notas de Electron del autor:
-   METODO-Flash-Verde-Arranque-Electron-Win11.) */
+   Ver C:\tools\electron-dev-docs\METODO-Flash-Verde-Arranque-Electron-Win11.md */
 
 /** Un color CSS cualquiera, resuelto a `#rrggbb`. */
 export function aHex(colorCSS) {
@@ -63,7 +62,7 @@ export function aHex(colorCSS) {
   return `#${[r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** El valor resuelto de un token de color, en hex. `colorToken('--ox-bg')`. */
+/** El valor resuelto de un token de color, en hex. `colorToken('--op-bg')`. */
 export function colorToken(nombre) {
   const probe = document.createElement('span');
   probe.style.cssText = `position:fixed;left:-9999px;color:var(${nombre})`;
@@ -80,7 +79,7 @@ export function colorToken(nombre) {
    justamente el punto: el rojo queda libre para significar "se rompió". */
 
 /** Formas disponibles. Sumá las tuyas mapeando tipo → forma. */
-export const SHAPES = ['circle', 'square'];
+export const SHAPES = ['circle', 'square', 'diamond', 'hex'];
 
 export const STATE_LABEL = {
   idle: 'Sin usar',
@@ -98,36 +97,13 @@ export function setStateLabels(map) {
 }
 
 export function mark(state, shape = 'circle') {
-  return `<span class="ox-mark ox-mark--${shape}" data-state="${esc(state)}">
-    <span class="ox-mark__halo"></span><span class="ox-mark__core"></span></span>`;
+  return `<span class="op-mark op-mark--${shape}" data-state="${esc(state)}">
+    <span class="op-mark__halo"></span><span class="op-mark__core"></span></span>`;
 }
 
 export function status(state, { shape = 'circle', label } = {}) {
-  return `<span class="ox-status" data-state="${esc(state)}">
+  return `<span class="op-status" data-state="${esc(state)}">
     ${mark(state, shape)}<span>${esc(label ?? STATE_LABEL[state] ?? state)}</span></span>`;
-}
-
-/**
- * Una ruta que, cuando no entra, se recorta por el medio.
- *
- * Acá solo se parte en dos: la cabeza —que es la que cede— y los últimos
- * `colas` segmentos, que son los que identifican la carpeta y quedan a salvo.
- * El recorte de verdad lo hace `.ox-path` en CSS, porque cuánto entra depende
- * del ancho de la ventana y eso desde JS habría que volver a medirlo en cada
- * resize.
- *
- * El texto sigue completo en el DOM: recortar es visual, y arrastrar sobre la
- * ruta la copia entera, con el pedazo escondido incluido.
- */
-export function path(ruta, { colas = 2 } = {}) {
-  const s = String(ruta ?? '');
-  // El separador viaja con el segmento que abre, así ninguno de los dos pedazos
-  // empieza ni termina con una barra suelta al volver a unirlos.
-  const partes = s.split(/(?=[\\/])/);
-  const corte = Math.max(0, partes.length - colas);
-  return `<span class="ox-path">`
-    + `<span class="ox-path__head">${esc(partes.slice(0, corte).join(''))}</span>`
-    + `<span class="ox-path__tail">${esc(partes.slice(corte).join(''))}</span></span>`;
 }
 
 /* ── Pintar ──────────────────────────────────────────────────────────────── */
@@ -137,10 +113,10 @@ export function path(ruta, { colas = 2 } = {}) {
  * scroll: si pintás sin pasar por acá, los <i data-icon> quedan vacíos y los
  * bordes del scroll se cortan duro.
  *
- * Repintar la MISMA vista (Router.refresh(), o la vista que se vuelve a pintar
- * con el dato nuevo) es un fundido que no pierde el lugar ni vuelve a hacer
- * entrar nada: ver repintar() en motion.js. Al navegar, el router ya se llevó
- * la vista vieja y esto solo pinta.
+ * Repintar la MISMA vista (Router.refresh(), o una vista que se vuelve a
+ * pintar con el dato nuevo) es un fundido que no pierde el lugar ni vuelve a
+ * hacer entrar nada: ver repintar() en motion.js. Al navegar, el router ya se
+ * llevó la vista vieja a su calco y esto solo pinta.
  */
 export function paint(html) {
   const el = viewEl();
@@ -152,38 +128,33 @@ export function paint(html) {
   return el;
 }
 
-/**
- * Encabezado de vista: migas, título, subtítulo y acciones a la derecha.
- * `linea: true` lo cierra con su hairline en vez de cortar al aire — y el shell
- * le apaga solo el esfumado de arriba al scroll de esa vista. Con inspector no
- * hace falta pedirla: el shell la pone solo.
- */
-export function head({ title, sub, crumbs, actions = '', linea = false } = {}) {
+/** Encabezado de vista: migas, título, subtítulo y acciones a la derecha. */
+export function head({ title, sub, crumbs, actions = '' } = {}) {
   const crumbHTML = crumbs
-    ? `<nav class="ox-crumbs">${crumbs
+    ? `<nav class="op-crumbs">${crumbs
         .map((c, i) => (i ? '<i data-icon="chevronRight"></i>' : '')
-          + `<span class="ox-crumbs__item"${c.view ? ` data-goto="${esc(c.view)}"` : ''}`
+          + `<span class="op-crumbs__item"${c.view ? ` data-goto="${esc(c.view)}"` : ''}`
           + `${c.param ? ` data-param="${esc(c.param)}"` : ''}>${esc(c.label)}</span>`)
         .join('')}</nav>`
     : '';
   return `
-    <div class="ox-viewhead${linea ? ' ox-viewhead--line' : ''}">
-      <div class="ox-viewhead__text ox-grow">
+    <div class="op-viewhead">
+      <div class="op-viewhead__text op-grow">
         ${crumbHTML}
-        <div class="ox-viewhead__title">${esc(title)}</div>
-        ${sub ? `<div class="ox-viewhead__sub">${esc(sub)}</div>` : ''}
+        <div class="op-viewhead__title">${esc(title)}</div>
+        ${sub ? `<div class="op-viewhead__sub">${esc(sub)}</div>` : ''}
       </div>
-      <div class="ox-viewhead__actions">${actions}</div>
+      <div class="op-viewhead__actions">${actions}</div>
     </div>`;
 }
 
 /** Estado vacío centrado — el que se usa cuando todavía no hay nada. */
 export function empty({ icon = 'inbox', title, text, actions = '' } = {}) {
-  return `<div class="ox-grow" style="display:grid;place-items:center">
-    <div class="ox-empty">${Icons.svg(icon)}
-      <div class="ox-empty__title">${esc(title)}</div>
-      ${text ? `<div class="ox-empty__text">${esc(text)}</div>` : ''}
-      ${actions ? `<div class="ox-row" style="gap:8px;margin-top:6px">${actions}</div>` : ''}
+  return `<div class="op-grow" style="display:grid;place-items:center">
+    <div class="op-empty">${Icons.svg(icon)}
+      <div class="op-empty__title">${esc(title)}</div>
+      ${text ? `<div class="op-empty__text">${esc(text)}</div>` : ''}
+      ${actions ? `<div class="op-row" style="gap:8px;margin-top:6px">${actions}</div>` : ''}
     </div></div>`;
 }
 
