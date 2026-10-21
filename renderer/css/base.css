@@ -75,9 +75,13 @@ p, code, pre,
 
 /* ── Scrollbar propia ────────────────────────────────────────────────────────
    Fina, sin flechas, y el thumb se materializa con el hover del contenedor.
-   Nunca la gris de Windows. */
+   Nunca la gris de Windows. Con respiro en las puntas: el riel se acorta
+   --op-sb-aire de cada lado, así el thumb no llega al tope real (pedido de
+   Fran). Un scroller con esquinas grandes lo pisa con su radio (shell.css). */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-track:vertical   { margin-block: var(--op-sb-aire); }
+::-webkit-scrollbar-track:horizontal { margin-inline: var(--op-sb-aire); }
 ::-webkit-scrollbar-corner { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: transparent;

@@ -39,8 +39,12 @@
 }
 
 /* La dirección del servidor, en la statusbar. */
-.ub-server { gap: var(--op-2); }
-.ub-server .op-mark { width: 9px; height: 9px; }
+/* El punto de «escuchando» es chico, del tamaño de una viñeta de texto (como
+   el de Claude Code en la terminal), no una lucecita: núcleo de 5 px y el
+   anillo que respira apenas alrededor. */
+.ub-server { gap: 6px; }
+.ub-server .op-mark { width: 7px; height: 7px; }
+.ub-server .op-mark__core { width: 5px; height: 5px; }
 #addr:empty { display: none; }
 
 /* ── El encabezado de cada vista: sus herramientas ─────────────────────────── */
