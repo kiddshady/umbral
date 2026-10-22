@@ -1,7 +1,7 @@
 {
   "name": "umbral",
   "productName": "Umbral",
-  "version": "0.14.0",
+  "version": "1.0.0",
   "description": "Send files between your phone and your PC over the local network",
   "main": "main.cjs",
   "author": "Kidd Shady · Umbrovex Systems",

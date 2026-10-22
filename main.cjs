@@ -59,8 +59,9 @@ const IMG_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
    «Enviar a», ni búsqueda de actualizaciones. */
 const SMOKE = !!process.env.UMBRAL_SMOKE;
 
-const DEFAULT_W = 1240;
-const DEFAULT_H = 820;
+// Desde la 1.0 abre del tamaño mínimo, que es como la usa Fran.
+const DEFAULT_W = 900;
+const DEFAULT_H = 600;
 const MIN_W = 900;
 const MIN_H = 600;
 
@@ -279,11 +280,12 @@ function centered(w, h) {
 }
 
 /* La ventana tiene que ENTRAR en el área útil de la pantalla donde cae. En una
-   1366×768 con la barra de tareas (área útil 1366×720), los 820 px por defecto
-   no entraban: centered() daba y = (720 - 820) / 2 = -50, Windows recortaba el
-   alto a 720 pero dejaba esa y, y la titlebar quedaba 50 px por arriba de la
-   pantalla, sin forma de agarrarla. Lo mismo con un tamaño guardado en un
-   monitor más grande. Por eso se achica al área útil y se empuja adentro. */
+   1366×768 con la barra de tareas (área útil 1366×720), los 820 px que tenía
+   por defecto hasta la 0.14 no entraban: centered() daba y = (720 - 820) / 2
+   = -50, Windows recortaba el alto a 720 pero dejaba esa y, y la titlebar
+   quedaba 50 px por arriba de la pantalla, sin forma de agarrarla. Lo mismo
+   con un tamaño guardado en un monitor más grande. Por eso se achica al área
+   útil y se empuja adentro. */
 function fitIn(w, h, pos) {
   const a = pos ? screen.getDisplayMatching({ ...pos, width: w, height: h }).workArea
                 : screen.getPrimaryDisplay().workArea;
