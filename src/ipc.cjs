@@ -22,7 +22,7 @@ const store = require('./store.cjs');
 const COLLECTIONS = [];   // Umbral no guarda colecciones: sus datos son las carpetas inbox/ y outbox/
 
 function coll(name) {
-  if (!COLLECTIONS.includes(name)) throw new Error(`colección no permitida: ${name}`);
+  if (!COLLECTIONS.includes(name)) throw new Error(`collection not allowed: ${name}`);
   return store.collection(name);
 }
 

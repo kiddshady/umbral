@@ -192,20 +192,23 @@ async function makeThumb(name) {
   return buf;
 }
 
-// "Enviar a → Umbral (al celu)" en el menú contextual del Explorador.
+// "Enviar a → Umbral" en el menú contextual del Explorador.
 // Se reescribe en cada arranque: si la app se reinstala en otra carpeta,
 // el acceso sigue apuntando bien. Solo empaquetada (en dev apuntaría a electron.exe).
 function ensureSendToShortcut() {
   if (!app.isPackaged) return;
   // la portable corre desde una copia temporal; el exe real viene en esta variable
   const exe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
-  const lnk = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'SendTo', 'Umbral (al celu).lnk');
+  const sendTo = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'SendTo');
+  const lnk = path.join(sendTo, 'Umbral.lnk');
+  // Hasta la 0.13 el acceso se llamaba «Umbral (al celu)»: no queda duplicado.
   try {
+    fs.rmSync(path.join(sendTo, 'Umbral (al celu).lnk'), { force: true });
     shell.writeShortcutLink(lnk, fs.existsSync(lnk) ? 'replace' : 'create', {
       target: exe,
       icon: exe,
       iconIndex: 0,
-      description: 'Deja el archivo en Umbral para bajarlo desde el teléfono',
+      description: 'Sends the file to Umbral so your phone can download it',
     });
   } catch (err) {
     console.log('[umbral] no se pudo crear el acceso de Enviar a:', err.message);
@@ -457,10 +460,10 @@ function registerHotkey() {
 // en el tray y ese menú es lo único que se ve de ella.
 function updateMenuItem() {
   const u = updater.get();
-  if (u.phase === 'ready') return { label: `Reiniciar para actualizar a ${u.version}`, click: () => updater.install(() => { quitting = true; }) };
-  if (u.phase === 'available') return { label: `Descargar la ${u.version}`, click: () => { showMain(); updater.download(); } };
-  if (u.phase === 'downloading') return { label: `Descargando la ${u.version}... ${Math.round(u.pct * 100)}%`, enabled: false };
-  return { label: 'Buscar actualizaciones', enabled: u.phase !== 'checking', click: () => { showMain(); updater.check({ manual: true }); } };
+  if (u.phase === 'ready') return { label: `Restart to update to ${u.version}`, click: () => updater.install(() => { quitting = true; }) };
+  if (u.phase === 'available') return { label: `Download ${u.version}`, click: () => { showMain(); updater.download(); } };
+  if (u.phase === 'downloading') return { label: `Downloading ${u.version}... ${Math.round(u.pct * 100)}%`, enabled: false };
+  return { label: 'Check for updates', enabled: u.phase !== 'checking', click: () => { showMain(); updater.check({ manual: true }); } };
 }
 
 let lastMenuKey = '';
@@ -472,15 +475,15 @@ function refreshTrayMenu() {
   if (menuKey === lastMenuKey) return; // el progreso llega muchas veces por segundo
   lastMenuKey = menuKey;
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Mostrar Umbral', accelerator: HOTKEY, registerAccelerator: false, click: showMain },
+    { label: 'Show Umbral', accelerator: HOTKEY, registerAccelerator: false, click: showMain },
     item,
     { type: 'separator' },
-    { label: 'Abrir al iniciar Windows', type: 'checkbox', checked: alIniciar, enabled: app.isPackaged,
+    { label: 'Start with Windows', type: 'checkbox', checked: alIniciar, enabled: app.isPackaged,
       click: (mi) => { setLoginItem(mi.checked); store.saveSettings({ abrirAlIniciar: mi.checked }).catch(() => {}); refreshTrayMenu(); } },
     { type: 'separator' },
-    { label: 'Salir', click: () => app.quit() },
+    { label: 'Quit', click: () => app.quit() },
   ]));
-  tray.setToolTip(updater.get().phase === 'ready' ? 'Umbral — actualización lista' : 'Umbral');
+  tray.setToolTip(updater.get().phase === 'ready' ? 'Umbral — update ready' : 'Umbral');
 }
 
 // ---------------------------------------------------------------------------
@@ -558,9 +561,9 @@ async function exportFile(src) {
   const name = path.basename(src);
   const ext = path.extname(name).slice(1);
   const res = await dialog.showSaveDialog(mainWindow, {
-    title: 'Exportar',
+    title: 'Export',
     defaultPath: path.join(lastExportDir || app.getPath('downloads'), name),
-    filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }, { name: 'Todos los archivos', extensions: ['*'] }] : [],
+    filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }, { name: 'All files', extensions: ['*'] }] : [],
   });
   if (res.canceled || !res.filePath) return { ok: false, canceled: true };
   try {

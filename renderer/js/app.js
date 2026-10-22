@@ -17,6 +17,9 @@ import { esc, paint, head, mark, attempt, colorToken } from './ui.js';
 import { Shell } from './shell.js';
 import { fmtClock, plural, locale } from './format.js';
 
+// En inglés, pero con el día antes del mes y el reloj de 24 horas.
+locale.tag = 'en-GB';
+
 const api = window.umbral;
 const win = window.opal.win;
 const $ = (id) => document.getElementById(id);
@@ -67,7 +70,7 @@ const S = {
 };
 
 const fmtWhen = (ms) => `${fmtClock(ms)} · ${new Date(ms).toLocaleDateString(locale.tag, { day: '2-digit', month: '2-digit' })}`;
-const extOf = (n) => (n.includes('.') ? n.split('.').pop().slice(0, 5).toUpperCase() : 'ARCHIVO');
+const extOf = (n) => (n.includes('.') ? n.split('.').pop().slice(0, 5).toUpperCase() : 'FILE');
 
 /* ══ Acciones ════════════════════════════════════════════════════════════════ */
 
@@ -78,7 +81,7 @@ const confirmar = ({ title, sub, confirmLabel, danger = false }) => Modal.show({
   title,
   sub,
   actions: [
-    { label: 'Cancelar', value: false, autofocus: danger },
+    { label: 'Cancel', value: false, autofocus: danger },
     { label: confirmLabel, value: true, variant: danger ? 'danger-solid' : 'primary', autofocus: !danger },
   ],
 }).then((v) => v === true);
@@ -86,22 +89,22 @@ const confirmar = ({ title, sub, confirmLabel, danger = false }) => Modal.show({
 // Una imagen se copia como imagen; lo demás, como archivo (se pega en una
 // carpeta o en Claude, como un Ctrl+C del Explorador).
 async function copiar(fn) {
-  const res = await attempt(fn, { errorTitle: 'No se pudo copiar' });
+  const res = await attempt(fn, { errorTitle: "Couldn't copy" });
   if (!res) return;
-  if (res.ok) Toast.show({ title: res.image ? 'Copiada al portapapeles' : 'Copiado al portapapeles', icon: 'copy', duration: 2600 });
-  else Toast.error('No se pudo copiar', 'Windows no dejó poner el archivo en el portapapeles.');
+  if (res.ok) Toast.show({ title: 'Copied to clipboard', icon: 'copy', duration: 2600 });
+  else Toast.error("Couldn't copy", "Windows didn't allow the file on the clipboard.");
 }
 
 async function abrir(fn) {
-  const res = await attempt(fn, { errorTitle: 'No se pudo abrir' });
-  if (res && !res.ok) Toast.error('No se pudo abrir', 'El archivo ya no está en la carpeta.');
+  const res = await attempt(fn, { errorTitle: "Couldn't open" });
+  if (res && !res.ok) Toast.error("Couldn't open", 'The file is no longer in the folder.');
 }
 
-async function exportar(fn, femenino = true) {
-  const res = await attempt(fn, { errorTitle: 'No se pudo exportar' });
+async function exportar(fn) {
+  const res = await attempt(fn, { errorTitle: "Couldn't export" });
   if (!res || res.canceled) return;
-  if (res.ok) Toast.show({ title: femenino ? 'Exportada' : 'Exportado', text: res.name, icon: 'exportar', duration: 3200 });
-  else Toast.error('No se pudo exportar', 'No se pudo escribir la copia en esa carpeta.');
+  if (res.ok) Toast.show({ title: 'Exported', text: res.name, icon: 'exportar', duration: 3200 });
+  else Toast.error("Couldn't export", "Couldn't write the copy to that folder.");
 }
 
 function removeIn(name) {
@@ -132,14 +135,14 @@ function addOut(items, { focus = false } = {}) {
   if (!n) return;
   if (focus || Router.name !== 'celu') go('celu');
   sync('celu');
-  Toast.show({ title: `${plural(n, 'archivo esperando', 'archivos esperando')} al celu`, icon: 'phoneDown', duration: 3200 });
+  Toast.show({ title: `${plural(n, 'file', 'files')} added to Sent`, icon: 'phoneDown', duration: 3200 });
 }
 
 async function addFiles(files) {
   if (!files.length) return;
-  const added = await attempt(() => api.outbox.addFiles(files), { errorTitle: 'No se pudieron agregar' });
+  const added = await attempt(() => api.outbox.addFiles(files), { errorTitle: "Couldn't add the files" });
   if (!added) return;
-  if (!added.length) Toast.error('No se agregó nada', 'Solo se pueden mandar archivos, no carpetas.');
+  if (!added.length) Toast.error('Nothing was added', 'Only files can be sent, not folders.');
   addOut(added, { focus: true });
 }
 
@@ -152,25 +155,25 @@ function menuAt(x, y, items) {
   return Menu.showAt(x, y, items);
 }
 
-const itemAbrir = (fn) => ({ label: 'Abrir', icon: 'file', onSelect: () => abrir(fn) });
+const itemAbrir = (fn) => ({ label: 'Open', icon: 'file', onSelect: () => abrir(fn) });
 
 function menuIn(item) {
   return [
     ...(item.image ? [] : [itemAbrir(() => api.recibidas.open(item.name))]),
-    { label: 'Copiar', icon: 'copy', onSelect: () => copiar(() => api.recibidas.copy(item.name)) },
-    { label: 'Exportar', icon: 'exportar', onSelect: () => exportar(() => api.recibidas.export(item.name), item.image) },
+    { label: 'Copy', icon: 'copy', onSelect: () => copiar(() => api.recibidas.copy(item.name)) },
+    { label: 'Export', icon: 'exportar', onSelect: () => exportar(() => api.recibidas.export(item.name)) },
     { sep: true },
-    { label: 'Eliminar', icon: 'trash', danger: true, onSelect: () => { closeLightbox(); removeIn(item.name); } },
+    { label: 'Delete', icon: 'trash', danger: true, onSelect: () => { closeLightbox(); removeIn(item.name); } },
   ];
 }
 
 function menuOut(item) {
   return [
     ...(item.image ? [] : [itemAbrir(() => api.outbox.open(item.name))]),
-    { label: 'Copiar', icon: 'copy', onSelect: () => copiar(() => api.outbox.copy(item.name)) },
-    { label: 'Exportar', icon: 'exportar', onSelect: () => exportar(() => api.outbox.export(item.name), item.image) },
+    { label: 'Copy', icon: 'copy', onSelect: () => copiar(() => api.outbox.copy(item.name)) },
+    { label: 'Export', icon: 'exportar', onSelect: () => exportar(() => api.outbox.export(item.name)) },
     { sep: true },
-    { label: 'Quitar de la bandeja', icon: 'quitar', danger: true, onSelect: () => { closeLightbox(); removeOut(item.name); } },
+    { label: 'Remove from Sent', icon: 'quitar', danger: true, onSelect: () => { closeLightbox(); removeOut(item.name); } },
   ];
 }
 
@@ -227,8 +230,8 @@ function cardIn(item) {
 }
 
 const pillHTML = (item) => (item.delivered
-  ? `${Icons.svg('check')}<span>Bajada</span>`
-  : `${mark('running')}<span>Esperando</span>`);
+  ? `${Icons.svg('check')}<span>Downloaded</span>`
+  : `${mark('running')}<span>Waiting</span>`);
 
 function cardOut(item) {
   const cls = `ub-card${item.image ? '' : ' ub-card--file'}${item.delivered ? ' is-delivered' : ''}`;
@@ -258,22 +261,22 @@ function updateOut(el, { it }) {
 
 const VIEWS = {
   recibidas: {
-    title: 'Recibidas',
-    sub: 'Lo que mandaste desde el teléfono',
+    title: 'Received',
+    sub: 'Files sent from your phone',
     list: () => S.inbox,
     card: cardIn,
     menu: menuIn,
     open: (name) => api.recibidas.open(name),
     empty: () => `
       <div class="op-empty ub-empty">${Icons.svg('arch')}
-        <div class="op-empty__title">El umbral está despejado</div>
-        <div class="op-empty__text">Compartí imágenes o archivos desde el teléfono y aparecen acá.</div>
+        <div class="op-empty__title">Nothing received</div>
+        <div class="op-empty__text">Files shared from your phone show up here.</div>
         ${S.url ? `<span class="ub-empty__addr op-copyable">${esc(S.url)}</span>` : ''}
       </div>`,
   },
   celu: {
-    title: 'Para el celu',
-    sub: 'Lo que el teléfono baja desde su pestaña Recibir',
+    title: 'Sent',
+    sub: 'Files your phone downloads from its Receive tab',
     list: () => S.out,
     card: cardOut,
     menu: menuOut,
@@ -281,10 +284,10 @@ const VIEWS = {
     update: updateOut,
     empty: () => `
       <div class="op-empty ub-empty">${Icons.svg('phoneDown')}
-        <div class="op-empty__title">Nada esperando al celu</div>
-        <div class="op-empty__text">Arrastrá archivos acá, pegá una imagen con Ctrl+V o usá
-          <strong>Enviar a <span class="ub-empty__inline">${Icons.svg('chevronRight')}</span> Umbral (al celu)</strong>
-          en el Explorador. En el teléfono aparecen en la pestaña <strong>Recibir</strong> de:</div>
+        <div class="op-empty__title">Nothing waiting</div>
+        <div class="op-empty__text">Drag files here, paste an image with Ctrl+V, or use
+          <strong>Send to <span class="ub-empty__inline">${Icons.svg('chevronRight')}</span> Umbral</strong>
+          in File Explorer. On your phone they show up in the <strong>Receive</strong> tab of:</div>
         ${S.url ? `<span class="ub-empty__addr op-copyable">${esc(S.url)}</span>` : ''}
       </div>`,
   },
@@ -298,9 +301,9 @@ const items = (v) => VIEWS[v].list().map((it) => ({ key: it.name, html: VIEWS[v]
 const iconBtn = (id, icon, tip, cls = '') =>
   `<button class="op-iconbtn ${cls}" id="${id}" data-tip="${esc(tip)}" data-tip-side="bottom"><i data-icon="${icon}"></i></button>`;
 const SEP = '<span class="op-vr ub-vr"></span>';
-const SIZE = `<div class="ub-size" data-tip="Tamaño de las miniaturas" data-tip-side="bottom">
+const SIZE = `<div class="ub-size" data-tip="Thumbnail size" data-tip-side="bottom">
   <i data-icon="sizeSm"></i>
-  <input type="range" class="op-slider" id="thumb-size" min="150" max="420" step="10" aria-label="Tamaño de las miniaturas">
+  <input type="range" class="op-slider" id="thumb-size" min="150" max="420" step="10" aria-label="Thumbnail size">
   <i data-icon="sizeLg"></i>
 </div>`;
 /* Casillas fijas (oct 2026): la carpeta va SIEMPRE última, y a su izquierda
@@ -311,17 +314,17 @@ const SIZE = `<div class="ub-size" data-tip="Tamaño de las miniaturas" data-tip
    y volver del Notepad y los botones se cruzaban en lugares distintos: Fran
    lo veía como «botones saltando». */
 const TOOLS = {
-  recibidas: () => `${SIZE}${SEP}${iconBtn('btn-nuke', 'nuke', 'Purgar todo', 'ub-nuke')}`,
-  celu: () => `${iconBtn('btn-add', 'plus', 'Agregar archivos')}${iconBtn('btn-sweep', 'sweep', 'Quitar las ya bajadas')}${SEP}${SIZE}${SEP}`
-    + `${iconBtn('btn-nuke', 'nuke', 'Vaciar la bandeja', 'ub-nuke')}`,
+  recibidas: () => `${SIZE}${SEP}${iconBtn('btn-nuke', 'nuke', 'Delete all', 'ub-nuke')}`,
+  celu: () => `${iconBtn('btn-add', 'plus', 'Add files')}${iconBtn('btn-sweep', 'sweep', 'Remove downloaded')}${SEP}${SIZE}${SEP}`
+    + `${iconBtn('btn-nuke', 'nuke', 'Remove all', 'ub-nuke')}`,
   // Limpiar y Copiar todo van arriba: abajo a la derecha caen los toasts.
-  notepad: () => `<button class="op-btn op-btn--ghost op-btn--sm" id="note-clear"><i data-icon="trash"></i> Limpiar</button>
-    <button class="op-btn op-btn--secondary op-btn--sm" id="note-copy"><i data-icon="copy"></i> Copiar todo</button>`,
+  notepad: () => `<button class="op-btn op-btn--ghost op-btn--sm" id="note-clear"><i data-icon="trash"></i> Clear</button>
+    <button class="op-btn op-btn--secondary op-btn--sm" id="note-copy"><i data-icon="copy"></i> Copy all</button>`,
 };
 const CARPETA = {
-  recibidas: 'Abrir la carpeta de lo recibido',
-  celu: 'Abrir la carpeta de la bandeja',
-  notepad: 'Mostrar notepad.txt en su carpeta',
+  recibidas: 'Open the Received folder',
+  celu: 'Open the Sent folder',
+  notepad: 'Show notepad.txt in its folder',
 };
 /* La zona es una celda (.op-celda): las herramientas de las otras vistas
    están ahí, apagadas, sin ids y fuera del foco, solo para que la zona mida
@@ -391,28 +394,28 @@ function guardarNotepad({ ya = false } = {}) {
   clearTimeout(noteTimer);
   const sale = () => {
     noteTimer = 0;
-    api.notepad.set(S.notepad).catch((err) => Toast.error('No se pudo guardar el notepad', err.message));
+    api.notepad.set(S.notepad).catch((err) => Toast.error("Couldn't save the notepad", err.message));
   };
   if (ya) sale();
   else noteTimer = setTimeout(sale, 250);
 }
 
-const DESDE = { celu: 'el celu', cc: 'CC', archivo: 'el archivo' };
+const DESDE = { celu: 'Changed on your phone', cc: 'Changed by Claude Code', archivo: 'Changed in the file' };
 
 const notepadInfo = () => {
   const d = S.notepadDesde;
   // Los avisos de paso (la letra, un Ctrl+K, un cambio de afuera) se dicen un
   // rato; si se pisan, se dice el último.
   const aviso = [
-    { t: S.notepadLetraT, dura: 1600, texto: `Letra de ${S.notepadLetra} px` },
+    { t: S.notepadLetraT, dura: 1600, texto: `Font size ${S.notepadLetra} px` },
     S.notepadAviso && { t: S.notepadAviso.t, dura: 1600, texto: S.notepadAviso.texto },
-    d && { t: d.t, dura: 2400, texto: `Cambió desde ${DESDE[d.desde] || 'afuera'}` },
+    d && { t: d.t, dura: 2400, texto: DESDE[d.desde] || 'Changed outside Umbral' },
   ].filter((a) => a && Date.now() - a.t < a.dura).sort((a, b) => b.t - a.t)[0];
   if (aviso) return aviso.texto;
   const n = S.notepad.length;
-  if (!n) return 'Se guarda solo, y lo ven el celu y CC';
+  if (!n) return 'Saves automatically and syncs with your phone';
   const lineas = S.notepad.split('\n').length;
-  return `${plural(n, 'carácter', 'caracteres')}${lineas > 1 ? ` · ${plural(lineas, 'línea', 'líneas')}` : ''}`;
+  return `${plural(n, 'character', 'characters')}${lineas > 1 ? ` · ${plural(lineas, 'line', 'lines')}` : ''}`;
 };
 
 function syncNotepad() {
@@ -421,8 +424,8 @@ function syncNotepad() {
   const clear = $('note-clear');
   if (!copy) return;
   copy.disabled = clear.disabled = vacio;
-  copy.dataset.tip = vacio ? 'No hay nada que copiar' : 'Copiar todo el texto';
-  clear.dataset.tip = vacio ? 'Ya está vacío' : 'Borrar todo el texto';
+  copy.dataset.tip = vacio ? 'Nothing to copy' : 'Copy all the text';
+  clear.dataset.tip = vacio ? 'Already empty' : 'Clear all the text';
   // Sin destello: con cada tecla se reiniciaba y al dejar de escribir se cortaba.
   frase($('note-info'), esc(notepadInfo()), { destello: false });
   for (const fn of alDia) fn();
@@ -666,12 +669,12 @@ async function cortarLinea(ta) {
   corte = { valor: ta.value, pos: ta.selectionStart, texto: junto };
   const n = junto.split('\n').length - 1;
   S.notepadAviso = {
-    texto: n === 1 ? 'Línea cortada: quedó en el portapapeles' : `${n} líneas cortadas, juntas en el portapapeles`,
+    texto: n === 1 ? 'Line cut to the clipboard' : `${n} lines cut to the clipboard`,
     t: Date.now(),
   };
   syncNotepad();
   setTimeout(syncNotepad, 1700);   // y después vuelve el conteo
-  await attempt(() => api.copyText(junto), { errorTitle: 'No se pudo copiar la línea' });
+  await attempt(() => api.copyText(junto), { errorTitle: "Couldn't copy the line" });
 }
 
 /* Ctrl+F busca en el Notepad, como en VS Code: una barra flotante arriba a
@@ -756,7 +759,7 @@ function buscador(ta) {
     const sin = !!q() && !n;
     barra.classList.toggle('is-sin', sin);
     for (const b of barra.querySelectorAll('[data-ir]')) b.disabled = n === 0;
-    frase(barra.querySelector('.ub-buscar__n'), n ? `${actual + 1} de ${n}` : sin ? 'Sin resultados' : '', { destello: false });
+    frase(barra.querySelector('.ub-buscar__n'), n ? `${actual + 1} of ${n}` : sin ? 'No results' : '', { destello: false });
   };
 
   const marcar = (i, { mostrar = false } = {}) => {
@@ -846,11 +849,11 @@ function buscador(ta) {
       barra.className = 'ub-buscar';
       barra.setAttribute('role', 'search');
       barra.innerHTML = `${Icons.svg('search')}
-        <input class="ub-buscar__q" spellcheck="false" placeholder="Buscar" aria-label="Buscar en el notepad">
+        <input class="ub-buscar__q" spellcheck="false" placeholder="Find" aria-label="Find in the notepad">
         <span class="ub-buscar__n"></span>
-        <button class="op-iconbtn op-iconbtn--sm" data-ir="-1" aria-label="Anterior" data-tip="Anterior" data-tip-key="Shift+Enter" data-tip-side="bottom" disabled>${Icons.svg('chevronUp')}</button>
-        <button class="op-iconbtn op-iconbtn--sm" data-ir="1" aria-label="Siguiente" data-tip="Siguiente" data-tip-key="Enter" data-tip-side="bottom" disabled>${Icons.svg('chevronDown')}</button>
-        <button class="op-iconbtn op-iconbtn--sm" data-cerrar aria-label="Cerrar" data-tip="Cerrar" data-tip-key="Esc" data-tip-side="bottom">${Icons.svg('close')}</button>`;
+        <button class="op-iconbtn op-iconbtn--sm" data-ir="-1" aria-label="Previous" data-tip="Previous" data-tip-key="Shift+Enter" data-tip-side="bottom" disabled>${Icons.svg('chevronUp')}</button>
+        <button class="op-iconbtn op-iconbtn--sm" data-ir="1" aria-label="Next" data-tip="Next" data-tip-key="Enter" data-tip-side="bottom" disabled>${Icons.svg('chevronDown')}</button>
+        <button class="op-iconbtn op-iconbtn--sm" data-cerrar aria-label="Close" data-tip="Close" data-tip-key="Esc" data-tip-side="bottom">${Icons.svg('close')}</button>`;
       const input = barra.querySelector('.ub-buscar__q');
       input.value = S.buscado;
       input.addEventListener('input', () => { S.buscado = input.value; pintar(); });
@@ -908,10 +911,10 @@ function buscador(ta) {
 }
 
 function viewNotepad() {
-  paint(`${head({ title: 'Notepad', sub: 'Lo escriben la PC, el celu y CC', actions: tools('notepad') })}
+  paint(`${head({ title: 'Notepad', sub: 'Synced with your phone', actions: tools('notepad') })}
   <div class="ub-note op-grow">
     <textarea class="op-textarea op-textarea--mono ub-note__text" id="note" spellcheck="false"
-      placeholder="Pegá o escribí algo para tenerlo a mano: un comando, un link, una nota para CC."></textarea>
+      placeholder="Paste or type something to keep it handy: a command, a link, a note."></textarea>
     <div class="ub-note__foot">
       <span class="ub-note__info" id="note-info"></span>
     </div>
@@ -1020,8 +1023,8 @@ function notepadDeAfuera({ text, desde }) {
 
 async function copiarNotepad() {
   if (!S.notepad) return;
-  const ok = await attempt(() => api.copyText(S.notepad), { errorTitle: 'No se pudo copiar' });
-  if (ok) Toast.show({ title: 'Copiado al portapapeles', icon: 'copy', duration: 2200 });
+  const ok = await attempt(() => api.copyText(S.notepad), { errorTitle: "Couldn't copy" });
+  if (ok) Toast.show({ title: 'Copied to clipboard', icon: 'copy', duration: 2200 });
 }
 
 /* El texto se funde por color, no por opacidad (con opacity el campo sube a
@@ -1047,7 +1050,7 @@ function limpiarNotepad() {
     }, 180);
   }
   syncNotepad();
-  Toast.show({ title: 'Notepad limpio', icon: 'trash', duration: 5200, action: { label: 'Deshacer', run: () => {
+  Toast.show({ title: 'Notepad cleared', icon: 'trash', duration: 5200, action: { label: 'Undo', run: () => {
     if (S.notepad) return;   // ya escribiste algo nuevo (acá o en el celu): no se pisa
     S.notepad = antes;
     S.notepadSel = sel;
@@ -1100,15 +1103,15 @@ function updateChrome() {
   const sweep = $('btn-sweep');
   if (sweep) {
     sweep.disabled = !S.out.some((i) => i.delivered);
-    sweep.dataset.tip = sweep.disabled ? 'Quitar las ya bajadas: ninguna bajó todavía' : 'Quitar las ya bajadas';
+    sweep.dataset.tip = sweep.disabled ? 'Remove downloaded: nothing downloaded yet' : 'Remove downloaded';
   }
   const nuke = $('btn-nuke');
   if (nuke) {
     const vacia = v === 'celu' ? !S.out.length : !S.inbox.length;
     nuke.disabled = vacia;
     nuke.dataset.tip = v === 'celu'
-      ? (vacia ? 'La bandeja ya está vacía' : 'Vaciar la bandeja')
-      : (vacia ? 'No hay nada que purgar' : 'Purgar todo');
+      ? (vacia ? 'Nothing to remove' : 'Remove all')
+      : (vacia ? 'Nothing to delete' : 'Delete all');
   }
 }
 
@@ -1119,7 +1122,7 @@ function wireChrome() {
   maxBtn.addEventListener('click', () => win.toggleMaximize());
   win.onMaximized((isMax) => {
     maxBtn.classList.toggle('is-b', isMax);   // los dos íconos se cruzan (.op-iconswap)
-    maxBtn.setAttribute('aria-label', isMax ? 'Restaurar' : 'Maximizar');
+    maxBtn.setAttribute('aria-label', isMax ? 'Restore' : 'Maximize');
   });
 
   // El rail: el router marca el activo, también cuando la vista cambia sola (arrastrar, Enviar a).
@@ -1154,7 +1157,7 @@ function quitarBajadas() {
   S.out = S.out.filter((i) => !i.delivered);
   for (const item of done) api.outbox.remove(item.name);
   sync('celu');
-  Toast.show({ title: plural(done.length, 'archivo quitado', 'archivos quitados'), icon: 'sweep', duration: 2600 });
+  Toast.show({ title: `${plural(done.length, 'file', 'files')} removed`, icon: 'sweep', duration: 2600 });
 }
 
 function onKey(e) {
@@ -1198,10 +1201,10 @@ function onKey(e) {
 }
 
 async function pegar() {
-  const res = await attempt(() => api.outbox.paste(), { errorTitle: 'No se pudo pegar' });
+  const res = await attempt(() => api.outbox.paste(), { errorTitle: "Couldn't paste" });
   if (!res) return;
   if (res.ok) addOut(res.items, { focus: true });
-  else Toast.error('No hay nada que pegar', 'El portapapeles no tiene una imagen ni archivos.');
+  else Toast.error('Nothing to paste', 'The clipboard has no image or files.');
 }
 
 /* ── Tamaño de las miniaturas ───────────────────────────────────────────── */
@@ -1243,17 +1246,17 @@ let pairTimer = 0;
    Antes crecía unos 60 px hacia arriba al pedir el código y el QR subía. */
 const pairHTML = () => `
   <div class="ub-pair__idle">
-    <button class="op-btn op-btn--secondary op-btn--sm" data-pair="start"><i data-icon="link"></i> Código para la app del celu</button>
+    <button class="op-btn op-btn--secondary op-btn--sm" data-pair="start"><i data-icon="link"></i> Code for the mobile app</button>
     <div class="ub-qr__text ub-pair__nota"></div>
   </div>
   <div class="ub-pair__con" hidden>
     <div class="ub-pair__code op-mono op-copyable">000 000</div>
-    <div class="ub-qr__text">Escribilo en Umbral Mobile. <span class="ub-pair__left">Vence en 2:00</span></div>
+    <div class="ub-qr__text">Enter it in Umbral Mobile. <span class="ub-pair__left">Expires in 2:00</span></div>
   </div>`;   // el código y el vencimiento de muestra son para que la celda mida lo que va a medir
 
 const restante = (expires) => {
   const s = Math.max(0, Math.ceil((expires - Date.now()) / 1000));
-  return `Vence en ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  return `Expires in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
 /* Vuelve al botón, con una nota abajo (se releva en su renglón). */
@@ -1270,7 +1273,7 @@ function pairStop() {
 }
 
 async function pairStart() {
-  const p = await attempt(() => api.pair.start(), { errorTitle: 'No se pudo generar el código' });
+  const p = await attempt(() => api.pair.start(), { errorTitle: "Couldn't create the code" });
   if (!p || !qr) return;
   const box = qr.querySelector('.ub-qr__pair');
   box.querySelector('.ub-pair__code').textContent = `${p.code.slice(0, 3)} ${p.code.slice(3)}`;
@@ -1283,7 +1286,7 @@ async function pairStart() {
     if (!qr) return pairStop();
     if (Date.now() >= p.expires) {
       pairStop();
-      return pairIdle('El código venció.');
+      return pairIdle('The code expired.');
     }
     numero(left, restante(p.expires), { destello: false });
   }, 1000);
@@ -1292,16 +1295,16 @@ async function pairStart() {
 async function olvidarDispositivos() {
   closeQr();
   const ok = await confirmar({
-    title: '¿Olvidar los dispositivos vinculados?',
-    sub: 'Umbral cambia su llave. El celu y los navegadores que ya estaban vinculados van a tener que vincularse de nuevo.',
-    confirmLabel: 'Olvidar',
+    title: 'Forget paired devices?',
+    sub: 'Umbral changes its key. Phones and browsers that were already paired will have to pair again.',
+    confirmLabel: 'Forget',
     danger: true,
   });
   if (!ok) return;
-  const nuevo = await attempt(() => api.pair.revoke(), { errorTitle: 'No se pudo cambiar la llave' });
+  const nuevo = await attempt(() => api.pair.revoke(), { errorTitle: "Couldn't change the key" });
   if (!nuevo) return;
   S.qr = nuevo;
-  Toast.show({ title: 'Dispositivos olvidados', text: 'Hay que volver a vincular el celu.', icon: 'lock', duration: 3600 });
+  Toast.show({ title: 'Devices forgotten', text: 'Pair your phone again to keep using it.', icon: 'lock', duration: 3600 });
 }
 
 function toggleQr() {
@@ -1310,10 +1313,10 @@ function toggleQr() {
   const el = document.createElement('div');
   el.className = 'ub-qr';
   el.innerHTML = `
-    <div class="ub-qr__code">${S.qr ? `<img src="${esc(S.qr)}" alt="QR de ${esc(S.url)}">` : ''}</div>
-    <div class="ub-qr__text">Escanealo con el teléfono para abrir Umbral en su navegador. Ya va vinculado.</div>
+    <div class="ub-qr__code">${S.qr ? `<img src="${esc(S.qr)}" alt="QR code for ${esc(S.url)}">` : ''}</div>
+    <div class="ub-qr__text">Scan it with your phone to open Umbral in its browser, already paired.</div>
     <div class="ub-qr__pair op-celda op-celda--start">${pairHTML()}</div>
-    <button class="op-btn op-btn--ghost op-btn--sm ub-qr__forget" data-pair="forget"><i data-icon="lock"></i> Olvidar dispositivos</button>`;
+    <button class="op-btn op-btn--ghost op-btn--sm ub-qr__forget" data-pair="forget"><i data-icon="lock"></i> Forget devices</button>`;
   Icons.mount(el);
   el.addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-pair]');
@@ -1352,17 +1355,17 @@ async function purgar() {
   const n = celu ? S.out.length : S.inbox.length;
   if (!n) return;
   const okay = await confirmar(celu
-    ? { title: 'Vaciar la bandeja', sub: `Se van a quitar ${plural(n, 'archivo', 'archivos')} y el celu deja de verlos. Los originales en tu PC no se tocan.`, confirmLabel: 'Vaciar', danger: true }
-    : { title: 'Purga total', sub: `Se van a eliminar ${plural(n, 'archivo recibido', 'archivos recibidos')}. No hay vuelta atrás.`, confirmLabel: 'Purgar', danger: true });
+    ? { title: 'Remove all from Sent', sub: `${plural(n, 'file', 'files')} will be removed and your phone will stop seeing them. The originals on your PC stay untouched.`, confirmLabel: 'Remove', danger: true }
+    : { title: 'Delete all received files', sub: `${plural(n, 'received file', 'received files')} will be deleted. This can't be undone.`, confirmLabel: 'Delete', danger: true });
   if (!okay) return;
   if (celu) {
     S.out = [];
-    await attempt(() => api.outbox.clear(), { errorTitle: 'No se pudo vaciar' });
-    Toast.show({ title: 'Bandeja vacía', icon: 'check', duration: 2600 });
+    await attempt(() => api.outbox.clear(), { errorTitle: "Couldn't remove the files" });
+    Toast.show({ title: 'Sent is empty', icon: 'check', duration: 2600 });
   } else {
     S.inbox = [];
-    await attempt(() => api.recibidas.clear(), { errorTitle: 'No se pudo purgar' });
-    Toast.show({ title: 'Umbral despejado', icon: 'check', duration: 2600 });
+    await attempt(() => api.recibidas.clear(), { errorTitle: "Couldn't delete the files" });
+    Toast.show({ title: 'Received is empty', icon: 'check', duration: 2600 });
   }
   // Las tarjetas se esfuman y recién ahí entra el vacío.
   const grid = $('grid');
@@ -1383,7 +1386,7 @@ function wireDrop() {
     if (veil) return;
     veil = document.createElement('div');
     veil.className = 'ub-veil';
-    veil.innerHTML = `<div class="ub-veil__card">${Icons.svg('phoneDown')}<div class="ub-veil__title">Soltá para mandarlo al celu</div></div>`;
+    veil.innerHTML = `<div class="ub-veil__card">${Icons.svg('phoneDown')}<div class="ub-veil__title">Drop to send to your phone</div></div>`;
     layer().appendChild(veil);
   };
   const hide = () => { if (veil) { exit(veil, { fallback: 220 }); veil = null; } };
@@ -1429,19 +1432,19 @@ const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 function updView(s) {
   switch (s.phase) {
     // El título del release es «Umbral X — qué trae»: arriba la versión, abajo el qué.
-    case 'available': return { ico: 'download', title: `Umbral ${s.version} disponible`,
-      sub: `${cap((s.name || '').split(/\s+[—-]\s+/).slice(1).join(' — ')) || `Tenés la ${s.current}`}${mb(s.bytes)}`,
-      acts: [['open', 'Ver novedades', 'op-btn--secondary'], ['download', 'Descargar', 'op-btn--primary']] };
-    case 'downloading': return { ico: 'download', title: `Descargando la ${s.version}`, sub: `${Math.round(s.pct * 100)} %`, bar: s.pct, sticky: true };
-    case 'ready': return { ico: 'check', title: `La ${s.version} está lista`, sub: 'Si no reiniciás ahora, se instala cuando salgas de Umbral.',
-      acts: [['install', 'Reiniciar', 'op-btn--primary']] };
-    case 'checking': return s.manual && { ico: 'spin', title: 'Buscando actualizaciones', sub: 'Consultando GitHub', indet: true };
-    case 'current': return s.manual && { ico: 'check', title: 'Estás al día', sub: `Umbral ${s.current}`, auto: 3200,
-      acts: [['close', 'Listo', 'op-btn--secondary']] };
-    case 'error': return s.manual && { ico: 'alert', bad: true, title: 'No se pudo buscar', sub: s.error,
-      acts: [['check', 'Reintentar', 'op-btn--secondary']] };
-    case 'unsupported': return s.manual && { ico: 'alert', bad: true, title: 'Sin actualización automática', sub: s.reason,
-      acts: [['close', 'Entendido', 'op-btn--secondary']] };
+    case 'available': return { ico: 'download', title: `Umbral ${s.version} available`,
+      sub: `${cap((s.name || '').split(/\s+[—-]\s+/).slice(1).join(' — ')) || `You have ${s.current}`}${mb(s.bytes)}`,
+      acts: [['open', "What's new", 'op-btn--secondary'], ['download', 'Download', 'op-btn--primary']] };
+    case 'downloading': return { ico: 'download', title: `Downloading ${s.version}`, sub: `${Math.round(s.pct * 100)} %`, bar: s.pct, sticky: true };
+    case 'ready': return { ico: 'check', title: `${s.version} is ready`, sub: "If you don't restart now, it installs when you quit Umbral.",
+      acts: [['install', 'Restart', 'op-btn--primary']] };
+    case 'checking': return s.manual && { ico: 'spin', title: 'Checking for updates', sub: 'Contacting GitHub', indet: true };
+    case 'current': return s.manual && { ico: 'check', title: "You're up to date", sub: `Umbral ${s.current}`, auto: 3200,
+      acts: [['close', 'Done', 'op-btn--secondary']] };
+    case 'error': return s.manual && { ico: 'alert', bad: true, title: "Couldn't check for updates", sub: s.error,
+      acts: [['check', 'Retry', 'op-btn--secondary']] };
+    case 'unsupported': return s.manual && { ico: 'alert', bad: true, title: 'No automatic updates', sub: s.reason,
+      acts: [['close', 'OK', 'op-btn--secondary']] };
     default: return null;
   }
 }
@@ -1461,7 +1464,7 @@ function updHTML() {
         <div class="ub-upd__title"></div>
         <div class="ub-upd__sub op-copyable"></div>
       </div>
-      <button class="op-iconbtn op-iconbtn--sm ub-upd__x" data-upd="close" aria-label="Cerrar">${Icons.svg('close')}</button>
+      <button class="op-iconbtn op-iconbtn--sm ub-upd__x" data-upd="close" aria-label="Close">${Icons.svg('close')}</button>
     </div>
     <div class="op-celda op-celda--mid ub-upd__pie">
       <div class="ub-upd__acts"></div>
@@ -1543,8 +1546,8 @@ async function tellAsides() {
   Toast.show({
     tone: 'error',
     duration: 0,
-    title: files.length === 1 ? `${files[0]} estaba dañado` : `${files.join(', ')} estaban dañados`,
-    text: `${files.length === 1 ? 'Quedó' : 'Quedaron'} aparte en la carpeta de datos, con «.corrupto-» en el nombre, y Umbral arrancó sin ${files.length === 1 ? 'él' : 'ellos'}.`,
+    title: files.length === 1 ? `${files[0]} was damaged` : `${files.join(', ')} were damaged`,
+    text: `${files.length === 1 ? 'It was' : 'They were'} set aside in the data folder with “.corrupto-” in the name, and Umbral started without ${files.length === 1 ? 'it' : 'them'}.`,
   });
 }
 
@@ -1578,7 +1581,7 @@ async function boot() {
     S.qr = await api.qr().catch(() => '');
   } catch (err) {
     console.error(err);
-    Toast.error('No se pudo iniciar', err.message);
+    Toast.error("Couldn't start", err.message);
   }
 
   $('addr').textContent = S.url;
@@ -1595,7 +1598,7 @@ async function boot() {
 
   api.recibidas.onNew((item) => {
     addIn(item);
-    const t = Toast.show({ title: item.image ? 'Imagen recibida' : 'Archivo recibido', text: item.name,
+    const t = Toast.show({ title: item.image ? 'Image received' : 'File received', text: item.name,
       icon: item.image ? 'download' : 'file', duration: 3200 });
     if (!item.image) return;
     const thumb = document.createElement('img');
@@ -1605,8 +1608,8 @@ async function boot() {
     t.el.querySelector(':scope > .op-icon')?.replaceWith(thumb);
   });
   api.pair.onDone((d) => {
-    if (pairTimer) { pairStop(); pairIdle('Listo, quedó vinculado.'); }
-    Toast.show({ title: 'Celu vinculado', text: d?.device || '', icon: 'check', duration: 3200 });
+    if (pairTimer) { pairStop(); pairIdle('Done, the device is paired.'); }
+    Toast.show({ title: 'Device paired', text: d?.device || '', icon: 'check', duration: 3200 });
   });
   api.outbox.onAdded((list, opts) => addOut(list, opts));
   api.notepad.onChanged(notepadDeAfuera);
@@ -1621,7 +1624,7 @@ async function boot() {
     const first = !cur.delivered;
     cur.delivered = item.delivered;
     sync('celu');
-    if (first) Toast.show({ title: 'Bajada en el celu', text: item.name, icon: 'check', duration: 3200 });
+    if (first) Toast.show({ title: 'Downloaded on your phone', text: item.name, icon: 'check', duration: 3200 });
   });
   api.update.onState((s) => {
     if (s.manual) updDismissed = '';   // si lo pediste, se muestra aunque la hayas cerrado antes

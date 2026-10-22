@@ -106,9 +106,9 @@ app.whenReady().then(async () => {
   ok('el contador nace vacío y se llena sin destellar',
     await js(`document.getElementById('n-in').textContent === '0' && !document.querySelector('.op-rail .op-ticked')`));
   ok('las herramientas de la bandeja no están en Recibidas', await js(`!document.getElementById('btn-add') && !document.getElementById('btn-sweep')`));
-  ok('el encabezado dice qué vista es', (await js(`document.querySelector('#view .op-viewhead__title')?.textContent`)) === 'Recibidas');
+  ok('el encabezado dice qué vista es', (await js(`document.querySelector('#view .op-viewhead__title')?.textContent`)) === 'Received');
   ok('el botón de purga está apagado y dice por qué',
-    await js(`(() => { const b = document.getElementById('btn-nuke'); return b.disabled && b.dataset.tip === 'No hay nada que purgar'; })()`));
+    await js(`(() => { const b = document.getElementById('btn-nuke'); return b.disabled && b.dataset.tip === 'Nothing to delete'; })()`));
   ok(`la ventana tiene el color de los tokens (${BG_MAIN})`, win.getBackgroundColor().toLowerCase().startsWith(BG_MAIN), win.getBackgroundColor());
 
   console.log('\n2. Una captura llega por la red');
@@ -132,7 +132,7 @@ app.whenReady().then(async () => {
   const menu = await rect('.op-menu');
   ok('el menú abre adentro de la ventana', dentro(menu), JSON.stringify(menu));
   ok('nace en el cursor', !!menu && Math.abs(menu.x - (card.x + 20)) < 12 && Math.abs(menu.y - (card.y + 20)) < 12, JSON.stringify({ menu, card }));
-  ok('trae Copiar, Exportar y Eliminar', (await js(`[...document.querySelectorAll('.op-menu .op-menuitem')].map(b => b.textContent.trim()).join('|')`)) === 'Copiar|Exportar|Eliminar');
+  ok('trae Copiar, Exportar y Eliminar', (await js(`[...document.querySelectorAll('.op-menu .op-menuitem')].map(b => b.textContent.trim()).join('|')`)) === 'Copy|Export|Delete');
   key('Escape');
   await sleep(400);
   ok('Escape lo cierra', !(await js(`!!document.querySelector('.op-menu')`)));
@@ -150,7 +150,7 @@ app.whenReady().then(async () => {
   await sleep(600);
   ok('el rail lleva a la bandeja vacía', await js(`!!document.querySelector('#view .ub-empty') && document.querySelector('.op-navitem.is-active').dataset.view === 'celu'`));
   ok('las herramientas de la bandeja aparecen', await js(`!!document.getElementById('btn-add') && !!document.getElementById('btn-sweep')`));
-  ok('barrer está apagado y dice por qué', await js(`(() => { const b = document.getElementById('btn-sweep'); return b.disabled && /ninguna bajó/.test(b.dataset.tip); })()`));
+  ok('barrer está apagado y dice por qué', await js(`(() => { const b = document.getElementById('btn-sweep'); return b.disabled && /nothing downloaded yet/.test(b.dataset.tip); })()`));
 
   const archivo = path.join(DIR, 'notas de prueba ñ.txt');
   fs.writeFileSync(archivo, 'hola celu');
@@ -159,7 +159,7 @@ app.whenReady().then(async () => {
   ok('el archivo entra a la bandeja como ficha', (await cards()) === 1 && await js(`!!document.querySelector('#grid .ub-card--file .ub-file__name')`));
   ok('el nombre llega entero (con la ñ)', (await js(`document.querySelector('#grid .ub-file__name')?.textContent`)) === 'notas de prueba ñ.txt');
   ok('la píldora dice Esperando y el contador se enciende',
-    await js(`document.querySelector('#grid .ub-pill').textContent.trim() === 'Esperando' && document.getElementById('n-out').classList.contains('is-hot')`));
+    await js(`document.querySelector('#grid .ub-pill').textContent.trim() === 'Waiting' && document.getElementById('n-out').classList.contains('is-hot')`));
 
   const bajada = await request('GET', `/out/file/${encodeURIComponent('notas de prueba ñ.txt')}?dl=1`);
   ok('el celu lo baja', bajada.status === 200 && bajada.body.toString() === 'hola celu', String(bajada.status));
@@ -167,7 +167,7 @@ app.whenReady().then(async () => {
   const pill = await js(`(() => { const c = document.querySelector('#grid .ub-card'); const p = c?.querySelector(':scope > .ub-pill');
     const nuevo = p && [...p.childNodes].filter((n) => !(n.classList?.contains('op-swap-out'))).map((n) => n.textContent).join('').trim();
     return { clase: c?.classList.contains('is-delivered'), nuevo }; })()`);
-  ok('la tarjeta pasa a bajada', pill.clase && pill.nuevo === 'Bajada', JSON.stringify(pill));
+  ok('la tarjeta pasa a bajada', pill.clase && pill.nuevo === 'Downloaded', JSON.stringify(pill));
   ok('el contador se apaga y barrer se enciende',
     await js(`!document.getElementById('n-out').classList.contains('is-hot') && !document.getElementById('btn-sweep').disabled`));
   await tap('#btn-sweep');
@@ -191,7 +191,7 @@ app.whenReady().then(async () => {
   await sleep(700);
   const cod = await codigo();
   ok('el botón muestra un código de 6 dígitos', /^\d{6}$/.test(cod), cod);
-  ok('…con su vencimiento', /^Vence en [12]:\d\d$/.test(await js(`document.querySelector('.ub-qr .ub-pair__left')?.textContent.trim()`)));
+  ok('…con su vencimiento', /^Expires in [12]:\d\d$/.test(await js(`document.querySelector('.ub-qr .ub-pair__left')?.textContent.trim()`)));
   const qrAlto = await rect('.ub-qr');
   // Desde oct 2026 el botón y el código comparten una celda: el cartel nace
   // con el alto del código y no cambia (antes crecía unos 60 px hacia arriba).
@@ -200,10 +200,10 @@ app.whenReady().then(async () => {
   const canje = await pedir(cod);
   ok('el celu canjea el código por la llave', canje.status === 200 && JSON.parse(canje.body).key === llave(), `${canje.status} ${canje.body}`);
   await sleep(800);
-  ok('la app avisa que se vinculó', await js(`[...document.querySelectorAll('.op-toast')].some((t) => /Celu vinculado/.test(t.textContent))`));
+  ok('la app avisa que se vinculó', await js(`[...document.querySelectorAll('.op-toast')].some((t) => /Device paired/.test(t.textContent))`));
   ok('…y el cartel vuelve al botón con la confirmación',
     await js(`document.querySelector('.ub-qr .ub-pair__con').hidden && !document.querySelector('.ub-qr .ub-pair__idle').hidden
-      && /quedó vinculado/.test(document.querySelector('.ub-qr .ub-pair__nota').textContent)`));
+      && /device is paired/.test(document.querySelector('.ub-qr .ub-pair__nota').textContent)`));
 
   await tap('.ub-qr [data-pair="start"]');
   await sleep(700);
@@ -220,7 +220,7 @@ app.whenReady().then(async () => {
   await tap('#btn-nuke');
   await sleep(500);
   ok('pide confirmación con un modal propio', await js(`!!document.querySelector('.op-modal')`));
-  ok('el foco arranca en Cancelar', await js(`document.activeElement?.textContent.trim() === 'Cancelar'`));
+  ok('el foco arranca en Cancelar', await js(`document.activeElement?.textContent.trim() === 'Cancel'`));
   const modal = await rect('.op-modal');
   ok('el modal cae adentro de la ventana', dentro(modal), JSON.stringify(modal));
   key('Escape');
@@ -242,12 +242,12 @@ app.whenReady().then(async () => {
     && (await js(`document.querySelector('#grid .ub-card--file .ub-file__name')?.textContent`)) === 'Apunte de Tecnia ñ.pdf');
   ok('la ficha dice PDF', (await js(`document.querySelector('#grid .ub-file__ext')?.textContent`)) === 'PDF');
   ok('el toast dice «Archivo recibido», sin miniatura',
-    await js(`[...document.querySelectorAll('.op-toast')].some((t) => /Archivo recibido/.test(t.textContent) && !t.querySelector('.ub-toast-thumb'))`));
+    await js(`[...document.querySelectorAll('.op-toast')].some((t) => /File received/.test(t.textContent) && !t.querySelector('.ub-toast-thumb'))`));
   await js(`(() => { const c = document.querySelector('#grid > .ub-card'); const r = c.getBoundingClientRect();
     c.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 20 })); })()`);
   await sleep(300);
   ok('su menú trae Abrir, Copiar, Exportar y Eliminar',
-    (await js(`[...document.querySelectorAll('.op-menu .op-menuitem')].map(b => b.textContent.trim()).join('|')`)) === 'Abrir|Copiar|Exportar|Eliminar');
+    (await js(`[...document.querySelectorAll('.op-menu .op-menuitem')].map(b => b.textContent.trim()).join('|')`)) === 'Open|Copy|Export|Delete');
   key('Escape');
   await sleep(400);
   await tap('#grid > .ub-card');
@@ -255,7 +255,7 @@ app.whenReady().then(async () => {
   ok('el click no abre el visor: lo abre con su programa',
     !(await js(`!!document.querySelector('.ub-lightbox')`)) && (global.__umbralAbiertos || []).at(-1) === 'Apunte de Tecnia ñ.pdf',
     JSON.stringify(global.__umbralAbiertos));
-  ok('el botón de la carpeta dice «lo recibido»', (await js(`document.getElementById('btn-folder').dataset.tip`)) === 'Abrir la carpeta de lo recibido');
+  ok('el botón de la carpeta dice «lo recibido»', (await js(`document.getElementById('btn-folder').dataset.tip`)) === 'Open the Received folder');
 
   console.log('\n6-bis. La tarjeta de actualización');
   // Lo que manda updater.js: el humo no busca en GitHub, le pasa los estados.
@@ -265,7 +265,7 @@ app.whenReady().then(async () => {
   const upd = await rect('.ub-upd');
   ok('una versión nueva aparece abajo a la izquierda de la hoja, adentro de la ventana', dentro(upd) && upd.x > rail.x + rail.w && upd.x < rail.x + rail.w + 60, JSON.stringify({ upd, rail }));
   ok('dice qué trae y cuánto pesa', (await js(`document.querySelector('.ub-upd__sub').textContent`)) === 'Entra a la familia Opal · 100 MB');
-  ok('con Descargar como primario', await js(`document.querySelector('.ub-upd .op-btn--primary')?.textContent === 'Descargar'`));
+  ok('con Descargar como primario', await js(`document.querySelector('.ub-upd .op-btn--primary')?.textContent === 'Download'`));
   /* Oct 2026, el arreglo del About de NTX: la tarjeta no cambia de alto ni de
      lugar entre fases, en ningún cuadro, y la cruz no se va: se apaga. */
   const muestras = async () => js(`(async () => {
@@ -305,7 +305,7 @@ app.whenReady().then(async () => {
   const aLista = await muestras();
   ok('de bajando a lista tampoco', aLista.every(([t, h]) => Math.abs(t - upd.y) < 0.6 && Math.abs(h - upd.h) < 0.6), JSON.stringify({ upd, aLista }));
   await sleep(200);
-  ok('lista: ofrece reiniciar', await js(`[...document.querySelectorAll('.ub-upd .op-btn')].some(b => b.textContent === 'Reiniciar')`));
+  ok('lista: ofrece reiniciar', await js(`[...document.querySelectorAll('.ub-upd .op-btn')].some(b => b.textContent === 'Restart')`));
   await tap('.ub-upd [data-upd="close"]');
   await sleep(500);
   ok('la cruz la cierra', !(await js(`!!document.querySelector('.ub-upd')`)));
@@ -436,7 +436,7 @@ app.whenReady().then(async () => {
   ok('arranca en la misma columna que su título', Math.abs(b0.left - b0.seg) < 1, `${b0.left} vs ${b0.seg}`);
   ok('la sangría derecha es la misma que la izquierda', Math.abs(b0.right - b0.left) < 1, `${b0.right} vs ${b0.left}`);
   ok('el pie queda dentro de la hoja', b0.footBottom >= 8, `${b0.footBottom} px`);
-  ok('vacío: Copiar todo apagado y dice que lo ven el celu y CC', b0.copyOff && /el celu y CC/.test(b0.info), b0.info);
+  ok('vacío: Copiar todo apagado y dice que lo ven el celu y CC', b0.copyOff && /syncs with your phone/.test(b0.info), b0.info);
   ok('sin miniaturas ni purga', b0.sizeHidden && b0.nukeHidden);
   ok('la carpeta queda, para mostrar el .txt', /notepad\.txt/.test(b0.folderTip), b0.folderTip);
   const fondo = () => js(`getComputedStyle(document.getElementById('note')).backgroundColor`);
@@ -452,14 +452,14 @@ app.whenReady().then(async () => {
     ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await sleep(450);
   const info = await js(`document.getElementById('note-info').textContent`);
-  ok('cuenta caracteres y líneas', /2 líneas/.test(info), info);
+  ok('cuenta caracteres y líneas', /2 lines/.test(info), info);
   // Una tecla más: el conteo cambia en su lugar, sin destello.
   await js(`(() => { const ta = document.getElementById('note'); ta.value += '!';
     ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await sleep(60);
   const tecla = await js(`(() => { const el = document.getElementById('note-info');
     return { ticked: el.classList.contains('op-ticked'), info: el.textContent }; })()`);
-  ok('el conteo cambia sin destellar', !tecla.ticked && /2 líneas/.test(tecla.info), JSON.stringify(tecla));
+  ok('el conteo cambia sin destellar', !tecla.ticked && /2 lines/.test(tecla.info), JSON.stringify(tecla));
   await js(`(() => { const ta = document.getElementById('note'); ta.value = ${JSON.stringify(TXT)};
     ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await sleep(450);
@@ -562,7 +562,7 @@ app.whenReady().then(async () => {
   await sleep(400);
   const l1 = await letra();
   ok('Ctrl + agranda de a un píxel', l1.fs === '15px', l1.fs);
-  ok('y abajo dice el tamaño', /Letra de 15 px/.test(l1.info), l1.info);
+  ok('y abajo dice el tamaño', /Font size 15 px/.test(l1.info), l1.info);
   ok('la ventana no se hizo zoom', win.webContents.getZoomLevel() === 0, String(win.webContents.getZoomLevel()));
   ctrl('-');
   await sleep(500);
@@ -571,7 +571,7 @@ app.whenReady().then(async () => {
   for (let i = 0; i < 20 && guardada !== 14; i++) { await sleep(100); guardada = (await js(`window.opal.settings.get()`)).notepadLetra; }
   ok('queda guardada para la próxima', guardada === 14, String(guardada));
   await sleep(1800);
-  ok('después vuelve el conteo', /2 líneas/.test((await letra()).info), (await letra()).info);
+  ok('después vuelve el conteo', /2 lines/.test((await letra()).info), (await letra()).info);
   ctrl('0');
   await sleep(400);
   ok('Ctrl 0 vuelve a 12 px', (await letra()).fs === '12px', (await letra()).fs);
@@ -590,7 +590,7 @@ app.whenReady().then(async () => {
   await sleep(150);
   ok('el último renglón se lleva el salto de antes', (await valor()) === 'uno', JSON.stringify(await valor()));
   ok('dos Ctrl+K seguidos se juntan', global.__umbralCopiado === 'dos\ntres\n', JSON.stringify(global.__umbralCopiado));
-  ok('abajo dice cuántas', /2 líneas cortadas/.test(await js(`document.getElementById('note-info').textContent`)));
+  ok('abajo dice cuántas', /2 lines cut/.test(await js(`document.getElementById('note-info').textContent`)));
   ctrl('Z');
   await sleep(150);
   ok('Ctrl+Z la devuelve', (await valor()) === 'uno\ntres', JSON.stringify(await valor()));
@@ -629,7 +629,7 @@ app.whenReady().then(async () => {
   await escribir('cancion');
   f = await buscando();
   ok('encuentra sin mayúsculas ni tildes', f.marcas.join('|') === 'Canción|cancion|CANCIÓN|canción', f.marcas.join('|'));
-  ok('la actual es la primera desde el cursor', f.actual === 0 && f.n === '1 de 4', `${f.actual} · ${f.n}`);
+  ok('la actual es la primera desde el cursor', f.actual === 0 && f.n === '1 of 4', `${f.actual} · ${f.n}`);
   ok('la actual va en luz entera', /240, 243, 247/.test(f.tinta) && !/, 0\.\d/.test(f.tinta), f.tinta);
   // La marca cae sobre su palabra: la segunda («cancion» de «la cancion») empieza 3 letras adentro del renglón 2.
   const geo = await js(`(() => { const ta = document.getElementById('note'), t = ta.getBoundingClientRect(), cs = getComputedStyle(ta);
@@ -641,12 +641,12 @@ app.whenReady().then(async () => {
   pulsar('Enter');
   await sleep(200);
   f = await buscando();
-  ok('Enter va a la siguiente', f.actual === 1 && f.n === '2 de 4', `${f.actual} · ${f.n}`);
+  ok('Enter va a la siguiente', f.actual === 1 && f.n === '2 of 4', `${f.actual} · ${f.n}`);
   pulsar('Enter', ['shift']);
   pulsar('Enter', ['shift']);
   await sleep(700);
   f = await buscando();
-  ok('Shift+Enter vuelve, y de la primera da la vuelta a la última', f.actual === 3 && f.n === '4 de 4', `${f.actual} · ${f.n}`);
+  ok('Shift+Enter vuelve, y de la primera da la vuelta a la última', f.actual === 3 && f.n === '4 of 4', `${f.actual} · ${f.n}`);
   ok('y el campo se corre para que se vea', f.scroll > 0 && f.actualY >= 0 && f.actualY < f.alto, JSON.stringify(f));
   pulsar('F3');
   await sleep(700);
@@ -654,11 +654,11 @@ app.whenReady().then(async () => {
   ok('F3 sigue buscando', f.actual === 0, String(f.actual));
   await escribir('canciónx');
   f = await buscando();
-  ok('sin nada: «Sin resultados» y las flechas apagadas', f.marcas.length === 0 && f.n === 'Sin resultados'
+  ok('sin nada: «Sin resultados» y las flechas apagadas', f.marcas.length === 0 && f.n === 'No results'
     && (await js(`[...document.querySelectorAll('.ub-buscar [data-ir]')].every((b) => b.disabled)`)), f.n);
   await escribir('dos');
   f = await buscando();
-  ok('una sola', f.marcas.join() === 'dos' && f.n === '1 de 1', `${f.marcas} · ${f.n}`);
+  ok('una sola', f.marcas.join() === 'dos' && f.n === '1 of 1', `${f.marcas} · ${f.n}`);
   const cortesB = await js(AUDITAR_ANILLOS);
   ok('ningún anillo de la barra se corta', cortesB.length === 0, '\n      ' + cortesB.join('\n      '));
   await js(`document.querySelector('.ub-buscar__q').focus()`);
@@ -702,7 +702,7 @@ app.whenReady().then(async () => {
   ok('lo del celu entra en el campo sin tocar nada', r1.v === DEL_CELU, JSON.stringify(r1.v));
   ok('el cursor se corre con el texto que se agregó antes', r1.sel === 6, `cursor en ${r1.sel}`);
   ok('el canto avisa que vino de afuera', r1.remoto);
-  ok('y abajo dice desde dónde', /desde el celu/.test(r1.info), r1.info);
+  ok('y abajo dice desde dónde', /on your phone/.test(r1.info), r1.info);
   const vieja = await request('PUT', '/notepad', Buffer.from(JSON.stringify({ text: 'pisado', base: g.hash })), { type: 'application/json' });
   ok('PUT con una versión vieja: 409 y no pisa', vieja.status === 409 && (await js(`document.getElementById('note').value`)) === DEL_CELU, String(vieja.status));
 
@@ -720,7 +720,7 @@ app.whenReady().then(async () => {
     rcc = await js(`(() => ({ v: document.getElementById('note').value, info: document.getElementById('note-info').textContent }))()`);
   }
   ok('lo que escribe CC entra en el campo', rcc?.v === DE_CC, JSON.stringify(rcc));
-  ok('y abajo dice que fue CC', /desde CC/.test(rcc?.info), rcc?.info);
+  ok('y abajo dice que fue CC', /by Claude Code/.test(rcc?.info), rcc?.info);
 
   for (const v of ['recibidas', 'celu', 'notepad']) {
     await tap(`.op-navitem[data-view="${v}"]`);

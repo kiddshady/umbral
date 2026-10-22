@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es"><head>
+<html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a0a0a">
@@ -142,17 +142,17 @@
   </div>
 
   <section class="pair" id="p-pair" hidden>
-    <strong>Vincular este navegador</strong>
-    <p>Escane&aacute; el QR de Umbral en la PC, o toc&aacute; &laquo;C&oacute;digo para la app del celu&raquo; ah&iacute; y escribilo ac&aacute;.</p>
+    <strong>Pair this browser</strong>
+    <p>Scan the QR code in Umbral on your PC, or tap &ldquo;Code for the mobile app&rdquo; there and enter it here.</p>
     <input id="pair-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000 000">
-    <button class="btn" id="pair-go">Vincular</button>
+    <button class="btn" id="pair-go">Pair</button>
     <span class="msg" id="pair-msg"></span>
   </section>
 
   <div class="tabs" id="tabs" data-on="send">
     <span class="tab-ind"></span>
-    <button class="tab on" data-tab="send">Enviar a la PC</button>
-    <button class="tab" data-tab="recv">Recibir <span class="badge" id="badge"></span></button>
+    <button class="tab on" data-tab="send">Send to PC</button>
+    <button class="tab" data-tab="recv">Receive <span class="badge" id="badge"></span></button>
   </div>
 
   <section class="panel" id="p-send">
@@ -160,8 +160,8 @@
       <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 19V6"/><path d="m6 12 6-6 6 6"/>
       </svg>
-      <span>Elegir archivos</span>
-      <small>im&aacute;genes, PDF o lo que sea; se env&iacute;an solos al elegirlos</small>
+      <span>Choose files</span>
+      <small>images, PDFs or anything else; they're sent as soon as you pick them</small>
       <input id="f" type="file" multiple hidden>
     </label>
     <ul id="sent"></ul>
@@ -177,8 +177,8 @@
       <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
         <path d="M5.5 20.5v-9a6.5 6.5 0 0 1 13 0v9"/><path d="M12 11v9.5"/>
       </svg>
-      <strong>No hay nada esperando</strong>
-      <span>Arrastr&aacute; archivos a la pesta&ntilde;a &laquo;Para el celu&raquo; de Umbral en la PC.</span>
+      <strong>Nothing waiting</strong>
+      <span>Drag files into the &ldquo;Sent&rdquo; tab of Umbral on your PC.</span>
     </div>
   </section>
 </div>
@@ -297,8 +297,8 @@
   let loaded = false;
 
   const fmtSize = (b) =>
-    b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(0) + ' KB' : (b / 1048576).toFixed(1).replace('.', ',') + ' MB';
-  const extOf = (n) => (n.includes('.') ? n.split('.').pop().slice(0, 5).toUpperCase() : 'ARCHIVO');
+    b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(0) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
+  const extOf = (n) => (n.includes('.') ? n.split('.').pop().slice(0, 5).toUpperCase() : 'FILE');
   const enc = encodeURIComponent;
 
   function makeTile(item) {
@@ -337,8 +337,8 @@
     badge.textContent = pending;
     badge.classList.toggle('show', pending > 0);
     countEl.textContent = !all.length ? '' :
-      pending ? `${pending} sin bajar de ${all.length}` : `${all.length} ${all.length === 1 ? 'archivo' : 'archivos'}, todo bajado`;
-    dlAll.innerHTML = SVG.down + '<span>Bajar ' + (pending > 1 ? 'los ' + pending : 'pendientes') + '</span>';
+      pending ? `${pending} of ${all.length} not downloaded` : `${all.length} ${all.length === 1 ? 'file' : 'files'}, all downloaded`;
+    dlAll.innerHTML = SVG.down + '<span>' + (pending > 1 ? 'Download all ' + pending : 'Download') + '</span>';
     dlAll.disabled = pending === 0;
     emptyEl.hidden = !loaded || all.length > 0;
   }
@@ -437,12 +437,12 @@
 
   async function vincular() {
     const code = pairCode.value.replace(/\D/g, '');
-    if (code.length !== 6) { pairMsg.className = 'msg err'; pairMsg.textContent = 'Son 6 números.'; return; }
+    if (code.length !== 6) { pairMsg.className = 'msg err'; pairMsg.textContent = 'The code has 6 digits.'; return; }
     pairMsg.className = 'msg';
-    pairMsg.textContent = 'Vinculando…';
+    pairMsg.textContent = 'Pairing…';
     try {
       const r = await fetch('/pair', { method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ code, device: 'Navegador del celu' }) });
+        body: JSON.stringify({ code, device: 'Phone browser' }) });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error);
       llave = j.key;
@@ -452,8 +452,8 @@
       mostrarApp();
     } catch (err) {
       pairMsg.className = 'msg err';
-      pairMsg.textContent = err.message === 'bad-code' ? 'Ese código no es.'
-        : err.message === 'no-pairing' ? 'El código venció. Pedí otro en la PC.' : 'No se pudo hablar con la PC.';
+      pairMsg.textContent = err.message === 'bad-code' ? 'Wrong code.'
+        : err.message === 'no-pairing' ? 'The code expired. Get a new one on your PC.' : "Couldn't reach the PC.";
     }
   }
 

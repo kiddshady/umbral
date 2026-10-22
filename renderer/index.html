@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<html lang="en">
 <meta charset="utf-8">
 <!-- CSP estricta: sin conexiones externas, sin eval. Las miniaturas son
      archivos locales (file:) y el QR llega como data:. -->
@@ -66,9 +67,9 @@
   </header>
 
   <div class="op-wincontrols">
-    <button class="op-wincontrol" id="win-min"   aria-label="Minimizar"><i data-icon="winMin"></i></button>
-    <button class="op-wincontrol op-iconswap" id="win-max" aria-label="Maximizar"><i data-icon="winMax"></i><i data-icon="winRestore"></i></button>
-    <button class="op-wincontrol op-wincontrol--close" id="win-close" aria-label="Cerrar"><i data-icon="winClose"></i></button>
+    <button class="op-wincontrol" id="win-min"   aria-label="Minimize"><i data-icon="winMin"></i></button>
+    <button class="op-wincontrol op-iconswap" id="win-max" aria-label="Maximize"><i data-icon="winMax"></i><i data-icon="winRestore"></i></button>
+    <button class="op-wincontrol op-wincontrol--close" id="win-close" aria-label="Close"><i data-icon="winClose"></i></button>
   </div>
 
   <div class="op-body">
@@ -78,13 +79,13 @@
       <div class="op-rail__nav op-scroll">
         <div class="op-rail__group">
           <!-- Los contadores nacen vacíos: el primer dato no es un cambio. -->
-          <button class="op-navitem" data-view="recibidas" data-tip="Lo que llegó del celu" data-tip-key="Ctrl+1" data-tip-side="right">
-            <i data-icon="inbox"></i> Recibidas <span class="op-navitem__count" id="n-in"></span>
+          <button class="op-navitem" data-view="recibidas" data-tip="Files from your phone" data-tip-key="Ctrl+1" data-tip-side="right">
+            <i data-icon="inbox"></i> Received <span class="op-navitem__count" id="n-in"></span>
           </button>
-          <button class="op-navitem" data-view="celu" data-tip="Lo que espera para bajar al celu" data-tip-key="Ctrl+2" data-tip-side="right">
-            <i data-icon="phoneDown"></i> Para el celu <span class="op-navitem__count ub-count" id="n-out"></span>
+          <button class="op-navitem" data-view="celu" data-tip="Files waiting for your phone" data-tip-key="Ctrl+2" data-tip-side="right">
+            <i data-icon="phoneDown"></i> Sent <span class="op-navitem__count ub-count" id="n-out"></span>
           </button>
-          <button class="op-navitem" data-view="notepad" data-tip="El texto que comparten la PC, el celu y CC" data-tip-key="Ctrl+3" data-tip-side="right">
+          <button class="op-navitem" data-view="notepad" data-tip="Text synced with your phone" data-tip-key="Ctrl+3" data-tip-side="right">
             <i data-icon="notepad"></i> Notepad
           </button>
         </div>
@@ -93,7 +94,7 @@
       <!-- Vincular el celu: el QR para el navegador y el código para la app. -->
       <div class="op-rail__foot ub-rail-foot">
         <button class="op-btn op-btn--secondary op-btn--sm op-flashable ub-vincular" id="btn-qr">
-          <i data-icon="qr"></i> Vincular el celu
+          <i data-icon="qr"></i> Pair a device
         </button>
       </div>
     </nav>
@@ -109,7 +110,7 @@
       <span class="op-statusbar__value op-mono op-copyable" id="addr"></span>
     </div>
     <div class="op-spacer"></div>
-    <div class="op-statusbar__item" data-tip="Trae Umbral desde cualquier lado" data-tip-side="top">
+    <div class="op-statusbar__item" data-tip="Show Umbral from anywhere" data-tip-side="top">
       <span class="op-kbd">Ctrl</span><span class="op-kbd">Shift</span><span class="op-kbd">U</span>
     </div>
   </footer>

@@ -49,10 +49,10 @@ function set(patch) {
 
 // El error de electron-updater trae stack y URL adentro: alcanza la primera línea.
 function message(err) {
-  const text = String(err?.message || err || 'Error desconocido').split('\n')[0].trim();
-  if (/ENOTFOUND|ENETUNREACH|EAI_AGAIN|getaddrinfo/i.test(text)) return 'No se pudo llegar a GitHub. ¿Hay internet?';
-  if (/ETIMEDOUT|ESOCKETTIMEDOUT/i.test(text)) return 'GitHub no contestó a tiempo.';
-  if (/404/.test(text)) return 'La versión nueva no tiene el archivo que hace falta para actualizar.';
+  const text = String(err?.message || err || 'Unknown error').split('\n')[0].trim();
+  if (/ENOTFOUND|ENETUNREACH|EAI_AGAIN|getaddrinfo/i.test(text)) return "Couldn't reach GitHub. Are you online?";
+  if (/ETIMEDOUT|ESOCKETTIMEDOUT/i.test(text)) return "GitHub didn't answer in time.";
+  if (/404/.test(text)) return 'The new version is missing the file needed to update.';
   return text;
 }
 
@@ -65,10 +65,10 @@ function init(opts) {
   // finge ser la 0.0.1 y consulta los releases reales.
   const devTest = !app.isPackaged && process.env.UMBRAL_UPDATE_TEST;
   if (!app.isPackaged && !devTest) {
-    return set({ phase: 'unsupported', reason: 'Desde el código fuente no hay nada que actualizar: usá git.' });
+    return set({ phase: 'unsupported', reason: 'Running from source, there is nothing to update: use git.' });
   }
   if (process.env.PORTABLE_EXECUTABLE_FILE) {
-    return set({ phase: 'unsupported', reason: 'La portable no se actualiza sola: bajate el .exe nuevo de GitHub y reemplazá el que tenés.' });
+    return set({ phase: 'unsupported', reason: "The portable version doesn't update itself: download the new .exe from GitHub and replace the one you have." });
   }
 
   ({ autoUpdater } = require('electron-updater'));

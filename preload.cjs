@@ -12,7 +12,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 /** Desenvuelve {ok,data|error} y convierte el error en una excepción real. */
 const call = async (channel, ...args) => {
   const res = await ipcRenderer.invoke(channel, ...args);
-  if (!res?.ok) throw new Error(res?.error || `Falló ${channel}`);
+  if (!res?.ok) throw new Error(res?.error || `${channel} failed`);
   return res.data;
 };
 

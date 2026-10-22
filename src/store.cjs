@@ -208,7 +208,7 @@ async function renameWithRetry(tmp, file, intentos = 5) {
 const SAFE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 
 function assertId(id) {
-  if (!SAFE_ID.test(String(id))) throw new Error(`id inválido: ${id}`);
+  if (!SAFE_ID.test(String(id))) throw new Error(`invalid id: ${id}`);
   return String(id);
 }
 
@@ -317,7 +317,7 @@ function collection(name) {
     get: (id) => readJSON(fileOf(id), null),
 
     async save(item) {
-      if (!item?.id) throw new Error('El ítem no tiene id.');
+      if (!item?.id) throw new Error('The item has no id.');
       await writeJSON(fileOf(item.id), item);
       return item;
     },
