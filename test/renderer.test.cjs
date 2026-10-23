@@ -187,16 +187,22 @@ app.whenReady().then(async () => {
   const codigo = async () => (await js(`document.querySelector('.ub-qr .ub-pair__code')?.textContent || ''`)).replace(/\D/g, '');
   ok('sin llave, el servidor no entrega la bandeja', (await request('GET', '/out', null, { sinLlave: true })).status === 401);
   const qrReposo = await rect('.ub-qr');
+  const huecoReposo = await js(`(() => {
+    const box = document.querySelector('.ub-qr .ub-qr__pair');
+    const idle = box.querySelector('.ub-pair__idle').getBoundingClientRect();
+    return Math.round((box.getBoundingClientRect().bottom - idle.bottom) * 10) / 10;
+  })()`);
   await tap('.ub-qr [data-pair="start"]');
   await sleep(700);
   const cod = await codigo();
   ok('el botón muestra un código de 6 dígitos', /^\d{6}$/.test(cod), cod);
   ok('…con su vencimiento', /^Expires in [12]:\d\d$/.test(await js(`document.querySelector('.ub-qr .ub-pair__left')?.textContent.trim()`)));
   const qrAlto = await rect('.ub-qr');
-  // Desde oct 2026 el botón y el código comparten una celda: el cartel nace
-  // con el alto del código y no cambia (antes crecía unos 60 px hacia arriba).
-  ok('el cartel no cambia de alto y sigue adentro de la ventana', dentro(qrAlto) && Math.abs(qrAlto.h - qrReposo.h) < 0.5 && Math.abs(qrAlto.y - qrReposo.y) < 0.5,
-    JSON.stringify({ antes: qrReposo, despues: qrAlto }));
+  // El cartel no le guarda el lugar al código (dejaba un hueco debajo del
+  // botón, oct 2026): crece hacia arriba, apoyado por abajo, y sigue adentro.
+  ok('en reposo la celda mide el botón, sin hueco abajo', huecoReposo < 1, String(huecoReposo));
+  ok('con el código el cartel crece hacia arriba y sigue adentro de la ventana', dentro(qrAlto) && qrAlto.h > qrReposo.h + 20
+    && Math.abs((qrAlto.y + qrAlto.h) - (qrReposo.y + qrReposo.h)) < 0.5, JSON.stringify({ antes: qrReposo, despues: qrAlto }));
   const canje = await pedir(cod);
   ok('el celu canjea el código por la llave', canje.status === 200 && JSON.parse(canje.body).key === llave(), `${canje.status} ${canje.body}`);
   await sleep(800);

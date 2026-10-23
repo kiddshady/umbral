@@ -249,14 +249,17 @@
 .ub-qr__text { font-size: var(--op-fs-12); color: var(--op-text-3); line-height: var(--op-lh-loose); }
 /* La vinculación de la app del celu: debajo del QR, separada por una línea.
    Es una celda (pairHTML en app.js): el botón y el código en el mismo lugar,
-   con el alto del código, arriba de todo. */
+   pero mide solo el prendido. El apagado sale del flujo y se apaga encima,
+   así no deja un hueco con el alto del código debajo del botón. */
 .ub-qr__pair {
+  position: relative;
   display: grid;
   justify-items: stretch;
   align-items: start;
   padding-top: var(--op-3);
   box-shadow: inset 0 1px 0 var(--op-line);
 }
+.ub-qr__pair > [hidden] { position: absolute; inset: 0 0 auto; }
 .ub-pair__idle, .ub-pair__con { display: flex; flex-direction: column; align-items: flex-start; gap: var(--op-2); }
 .ub-pair__nota:empty { display: none; }
 /* El código es lo importante del cartel: un pozo con el canto vivo. */

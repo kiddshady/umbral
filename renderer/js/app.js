@@ -1241,9 +1241,11 @@ let qr = null;
 let pairTimer = 0;
 
 /* Los dos estados de la vinculación (el botón con su nota, y el código con
-   su vencimiento) viven siempre en la misma celda (oct 2026): el cartel nace
-   con el alto del más alto y no cambia nunca, solo se cruzan en su lugar.
-   Antes crecía unos 60 px hacia arriba al pedir el código y el QR subía. */
+   su vencimiento) se cruzan en la misma celda, pero la celda mide solo el
+   que está prendido. Guardarle el lugar al código dejaba un hueco vacío
+   debajo del botón, y Fran prefiere que crezca, como el calendario de Prism
+   (oct 2026). El cartel se apoya por abajo: crece hacia arriba, deslizándose
+   (pairCelda). */
 const pairHTML = () => `
   <div class="ub-pair__idle">
     <button class="op-btn op-btn--secondary op-btn--sm" data-pair="start"><i data-icon="link"></i> Code for the mobile app</button>
@@ -1252,7 +1254,28 @@ const pairHTML = () => `
   <div class="ub-pair__con" hidden>
     <div class="ub-pair__code op-mono op-copyable">000 000</div>
     <div class="ub-qr__text">Enter it in Umbral Mobile. <span class="ub-pair__left">Expires in 2:00</span></div>
-  </div>`;   // el código y el vencimiento de muestra son para que la celda mida lo que va a medir
+  </div>`;
+
+/* Prende el estado `i` (y antes hace `cambio`, si lo hay) y la celda desliza
+   su alto del que tenía al nuevo. Al crecer se abre enseguida y el código
+   entra con su retardo; al achicarse espera a que el código casi no se vea
+   y recién ahí se pliega, así nunca se ve cortado por el borde. */
+function pairCelda(box, i, cambio) {
+  const h0 = box.getBoundingClientRect().height;
+  box.__glide?.cancel();
+  cambio?.();
+  celda(box, i);
+  const h1 = box.getBoundingClientRect().height;
+  if (Math.abs(h1 - h0) < 1 || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cs = getComputedStyle(document.documentElement);
+  const achica = h1 < h0;
+  box.__glide = box.animate([{ height: `${h0}px`, overflow: 'clip' }, { height: `${h1}px`, overflow: 'clip' }], {
+    duration: parseFloat(cs.getPropertyValue('--op-t-3')) || 280,
+    easing: cs.getPropertyValue(achica ? '--op-ease-both' : '--op-ease').trim() || 'ease',
+    delay: achica ? 100 : 0,
+    fill: 'backwards',
+  });
+}
 
 const restante = (expires) => {
   const s = Math.max(0, Math.ceil((expires - Date.now()) / 1000));
@@ -1263,8 +1286,7 @@ const restante = (expires) => {
 function pairIdle(nota) {
   if (!qr) return;
   const box = qr.querySelector('.ub-qr__pair');
-  swap(box.querySelector('.ub-pair__nota'), esc(nota), { relevo: true });
-  celda(box, 0);
+  pairCelda(box, 0, () => swap(box.querySelector('.ub-pair__nota'), esc(nota), { relevo: true }));
 }
 
 function pairStop() {
@@ -1279,7 +1301,7 @@ async function pairStart() {
   box.querySelector('.ub-pair__code').textContent = `${p.code.slice(0, 3)} ${p.code.slice(3)}`;
   const left = box.querySelector('.ub-pair__left');
   left.textContent = restante(p.expires);
-  celda(box, 1);
+  pairCelda(box, 1);
   pairStop();
   /* La cuenta corre sola: sin destello (con valor() destellaba cada segundo). */
   pairTimer = setInterval(() => {
